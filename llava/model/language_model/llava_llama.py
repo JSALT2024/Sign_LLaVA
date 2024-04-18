@@ -87,7 +87,6 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
                 images,
                 image_sizes
             )
-
         return super().forward(
             input_ids=input_ids,
             attention_mask=attention_mask,

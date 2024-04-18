@@ -10,8 +10,13 @@ dist
 *.json
 *.jsonl
 
+# Tools
+bitsandbytes/
+
 # Data
 !**/alpaca-data-conversation.json
+playground/data
+images/cc3m
 
 # Editor
 .idea

@@ -13,32 +13,37 @@ MODEL_VERSION="vicuna-v1-3-7b"
 # PROMPT_VERSION="llava_llama_2"
 # MODEL_VERSION="llama-2-7b-chat"
 ################## LLaMA-2 ##################
+module load gcc/11.3.0
+module load cuda11.8/toolkit/11.8.0-1
 CUDA_ID=$CUDA_VISIBLE_DEVICES
-source ~/scripts/get_gpu_ids.sh
+source scripts/get_gpu_ids.sh
 export CUDA_VISIBLE_DEVICES=$gpu_indices
 echo "Setting CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
 
-deepspeed --include localhost:$CUDA_ID llava/train/train_xformers.py \
+deepspeed --include localhost:${CUDA_ID} llava/train/train_xformers.py \
     --deepspeed ./scripts/zero2.json \
     --lora_enable True \
     --model_name_or_path lmsys/vicuna-7b-v1.3 \
     --version $PROMPT_VERSION \
-    --data_path ./playground/data/llava_v1_5_mix665k.json \
-    --image_folder ./playground/data/ \
+    --data_path ./phoenix14t/data/anno.finetune.json \
+    --s3d_path ./phoenix14t/data/S3D_features.finetune.pkl \
+    --pretrain_mm_mlp_adapter ./checkpoints/llava-vicuna-v1-3-7b-pretrain_phoenix14t_s3d/mm_projector.bin \
     --vision_tower openai/clip-vit-base-patch16 \
+    --mm_projector_type mlp2x_gelu \
+    --mm_hidden_size 832 \
     --mm_vision_select_layer -2 \
     --mm_use_im_start_end False \
     --mm_use_im_patch_token False \
     --bf16 False \
-    --output_dir ./checkpoints/llava-$MODEL_VERSION-finetune_lora \
-    --num_train_epochs 1 \
+    --output_dir ./checkpoints/llava-$MODEL_VERSION-finetune_lora_phoenix14t_s3d \
+    --num_train_epochs 40 \
     --per_device_train_batch_size 1 \
     --per_device_eval_batch_size 1 \
-    --gradient_accumulation_steps 1 \
+    --gradient_accumulation_steps 16 \
     --evaluation_strategy "no" \
     --save_strategy "steps" \
-    --save_steps 50000 \
-    --save_total_limit 1 \
+    --save_steps 200 \
+    --save_total_limit 5 \
     --learning_rate 2e-5 \
     --weight_decay 0. \
     --warmup_ratio 0.03 \
@@ -50,4 +55,3 @@ deepspeed --include localhost:$CUDA_ID llava/train/train_xformers.py \
     --lazy_preprocess True \
     --dataloader_num_workers 0 \
     --report_to wandb
-#--pretrain_mm_mlp_adapter ./checkpoints/llava-$MODEL_VERSION-pretrain/mm_projector.bin \

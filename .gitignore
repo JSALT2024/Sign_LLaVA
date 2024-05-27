@@ -17,6 +17,8 @@ bitsandbytes/
 !**/alpaca-data-conversation.json
 playground/data
 images/cc3m
+phoenix14t/data
+phoenix14t/data.zip
 
 # Editor
 .idea

@@ -18,6 +18,7 @@ import os
 import copy
 from dataclasses import dataclass, field
 import json
+import pickle
 import logging
 import pathlib
 from typing import Dict, Optional, Sequence, List
@@ -58,6 +59,7 @@ class ModelArguments:
     tune_mm_mlp_adapter: bool = field(default=False)
     vision_tower: Optional[str] = field(default=None)
     mm_vision_select_layer: Optional[int] = field(default=-1)   # default to the last layer
+    mm_hidden_size: Optional[int] = field(default=768)
     pretrain_mm_mlp_adapter: Optional[str] = field(default=None)
     mm_projector_type: Optional[str] = field(default='linear')
     mm_use_im_start_end: bool = field(default=False)
@@ -72,6 +74,7 @@ class DataArguments:
                            metadata={"help": "Path to the training data."})
     lazy_preprocess: bool = False
     is_multimodal: bool = False
+    s3d_path: Optional[str] = field(default=None)
     image_folder: Optional[str] = field(default=None)
     image_aspect_ratio: str = 'square'
 
@@ -730,6 +733,46 @@ class LazySupervisedDataset(Dataset):
             data_dict['image'] = torch.zeros(3, crop_size['height'], crop_size['width'])
         return data_dict
 
+class LazySupervisedS3DFeatureDataset(LazySupervisedDataset):
+    """Dataset for supervised fine-tuning on S3D features."""
+    def __init__(self, data_path: str,
+                 tokenizer: transformers.PreTrainedTokenizer,
+                 data_args: DataArguments):
+        super(LazySupervisedS3DFeatureDataset, self).__init__(data_path, tokenizer, data_args)
+        with open(self.data_args.s3d_path, 'rb') as f:
+            self.s3d = pickle.load(f)
+
+    def __getitem__(self, i) -> Dict[str, torch.Tensor]:
+        sources = self.list_data_dict[i]
+        if isinstance(i, int):
+            sources = [sources]
+        assert len(sources) == 1, "Don't know why it is wrapped to a list"  # FIXME
+        if 'image' in sources[0]:
+            image_file = self.list_data_dict[i]['image']
+            image = self.s3d[image_file] # tensor(T//4, 832)
+            image_folder = self.data_args.image_folder
+            sources = preprocess_multimodal(
+                copy.deepcopy([e["conversations"] for e in sources]),
+                self.data_args)
+        else:
+            sources = copy.deepcopy([e["conversations"] for e in sources])
+        data_dict = preprocess(
+            sources,
+            self.tokenizer,
+            has_image=('image' in self.list_data_dict[i]))
+        if isinstance(i, int):
+            data_dict = dict(input_ids=data_dict["input_ids"][0],
+                             labels=data_dict["labels"][0])
+
+        # image exist in the data
+        if 'image' in self.list_data_dict[i]:
+            data_dict['image'] = image
+        elif self.data_args.is_multimodal:
+            # image does not exist in the data, but the model is multimodal
+            crop_size = self.data_args.image_processor.crop_size
+            data_dict['image'] = torch.zeros(3, crop_size['height'], crop_size['width'])
+        data_dict['s3d'] = True
+        return data_dict
 
 @dataclass
 class DataCollatorForSupervisedDataset(object):
@@ -761,16 +804,22 @@ class DataCollatorForSupervisedDataset(object):
                 batch['images'] = torch.stack(images)
             else:
                 batch['images'] = images
-
+        if 's3d' in instances[0]:
+            batch['s3d'] = instances[0]['s3d']
         return batch
 
 
 def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer,
                                 data_args) -> Dict:
     """Make dataset and collator for supervised fine-tuning."""
-    train_dataset = LazySupervisedDataset(tokenizer=tokenizer,
-                                data_path=data_args.data_path,
-                                data_args=data_args)
+    if data_args.image_folder:
+        train_dataset = LazySupervisedDataset(tokenizer=tokenizer,
+                                    data_path=data_args.data_path,
+                                    data_args=data_args)
+    elif data_args.s3d_path:
+        train_dataset = LazySupervisedS3DFeatureDataset(tokenizer=tokenizer,
+                                    data_path=data_args.data_path,
+                                    data_args=data_args)
     data_collator = DataCollatorForSupervisedDataset(tokenizer=tokenizer)
     return dict(train_dataset=train_dataset,
                 eval_dataset=None,

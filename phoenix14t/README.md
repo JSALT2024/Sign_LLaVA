@@ -13,7 +13,7 @@ conda activate llava
 **3. Prepare data.**
 Download data from SynologyDrive `phoenix14t/data.zip`, move the unzipped folder `data` to `llava/phoenix14t/data`.
 
-**4. Run experiments.**
+**4. Run experiments on a GPU device.**
 ```
 cd LLaVA
 ```

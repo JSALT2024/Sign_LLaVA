@@ -2,15 +2,13 @@
 # Uncomment and set the following variables correspondingly to run this script:
 
 # MODEL_VERSION=vicuna-v1-3-7b
-MODEL_VERSION=llama-2-7b-chat
-
+MODEL_VERSION=Meta-Llama-Guard-2-8B #Llama-2-7b-chat-hf
+PROMPT_VERSION=llava_sign_llama_3 #llava_llama_2
 ########### DO NOT CHANGE ###########
 ########### USE THIS FOR BOTH ###########
-PROMPT_VERSION=llava_llama_2
 module load gcc/11.3.0
 module load cuda11.8/toolkit/11.8.0-1
 cd /exp/xzhang/slt/jsalt2024/LLaVA
-source activate llava
 
 CUDA_ID=$CUDA_VISIBLE_DEVICES
 source scripts/get_gpu_ids.sh
@@ -19,7 +17,7 @@ echo "Setting CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
 ########### DO NOT CHANGE ###########
 deepspeed --include localhost:${CUDA_ID} --master_port=29501 llava/train/train_xformers.py \
     --deepspeed ./scripts/zero2.json \
-    --model_name_or_path meta-llama/Llama-2-7b-chat-hf \
+    --model_name_or_path meta-llama/${MODEL_VERSION} \
     --version $PROMPT_VERSION \
     --data_path ./phoenix14t/data/anno.pretrain.json \
     --s3d_path ./phoenix14t/data/S3D_features.pretrain.pkl \
@@ -31,7 +29,6 @@ deepspeed --include localhost:${CUDA_ID} --master_port=29501 llava/train/train_x
     --mm_use_im_start_end False \
     --mm_use_im_patch_token False \
     --bf16 False \
-    --bits 4 \
     --output_dir ./checkpoints/llava-$MODEL_VERSION-pretrain_phoenix14t_s3d \
     --num_train_epochs 20 \
     --per_device_train_batch_size 1 \

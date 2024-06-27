@@ -102,10 +102,10 @@ class TrainingArguments(transformers.TrainingArguments):
         metadata={"help": "Quantization data type to use. Should be one of `fp4` or `nf4`."}
     )
     bits: int = field(
-        default=16,
+        default=4,
         metadata={"help": "How many bits to use."}
     )
-    lora_enable: bool = False
+    lora_enable: bool = True
     lora_r: int = 64
     lora_alpha: int = 16
     lora_dropout: float = 0.05
@@ -368,7 +368,7 @@ def preprocess_llama_2(
 
     assert conv.sep_style == conversation_lib.SeparatorStyle.LLAMA_2
 
-    # Mask targets
+    # Mask everything but targets
     sep = "[/INST] "
     for conversation, target in zip(conversations, targets):
         total_len = int(target.ne(tokenizer.pad_token_id).sum())
@@ -404,12 +404,86 @@ def preprocess_llama_2(
                     f"WARNING: tokenization mismatch: {cur_len} vs. {total_len}."
                     f" (ignored)"
                 )
-
     return dict(
         input_ids=input_ids,
         labels=targets,
     )
 
+def preprocess_llama_3(
+    sources,
+    tokenizer: transformers.PreTrainedTokenizer,
+    has_image: bool = False
+) -> Dict:
+    conv = conversation_lib.default_conversation.copy()
+    roles = {"human": conv.roles[0], "gpt": conv.roles[1]}
+
+    # Apply prompt templates
+    conversations = []
+    for i, source in enumerate(sources):
+        if roles[source[0]["from"]] != conv.roles[0]:
+            # Skip the first one if it is not from human
+            source = source[1:]
+
+        conv.messages = []
+        for j, sentence in enumerate(source):
+            role = roles[sentence["from"]]
+            assert role == conv.roles[j % 2], f"{i}"
+            conv.append_message(role, sentence["value"])
+        conversations.append(conv.get_prompt())
+
+    # Tokenize conversations
+    if has_image:
+        input_ids = torch.stack([tokenizer_image_token(prompt, tokenizer, return_tensors='pt') for prompt in conversations], dim=0)
+    else:
+        input_ids = tokenizer(
+            conversations,
+            return_tensors="pt",
+            padding="longest",
+            max_length=tokenizer.model_max_length,
+            truncation=True,
+        ).input_ids
+
+    targets = input_ids.clone()
+
+    assert conv.sep_style == conversation_lib.SeparatorStyle.LLAMA_3
+
+    # Mask targets
+    assistant_header = "<|start_header_id|>assistant<|end_header_id|>\n\n"
+    bot = "<|begin_of_text|>"
+    eot = "<|eot_id|>" 
+    
+    assistant_header_len = len(tokenizer_image_token(assistant_header, tokenizer))
+    for conversation, target in zip(conversations, targets):
+        cur_len = 0
+        # targets: labels of assistant output
+        total_len = int(target.ne(tokenizer.pad_token_id).sum()) # the length of non-target (non-labels)
+        # cur_len: the length of non-target parts
+        parts = conversation.split(assistant_header)
+        cur_len += len(tokenizer_image_token(parts[0], tokenizer))
+        target[:cur_len] = IGNORE_INDEX
+        for part in parts[1:]:
+            if part != "":
+                target[cur_len:cur_len+assistant_header_len] = IGNORE_INDEX
+                cur_len += assistant_header_len
+                response_eot_id = part.find(eot)
+                response_len = len(tokenizer_image_token(part[:response_eot_id], tokenizer)) + 1
+                cur_len += response_len
+                if cur_len < total_len:
+                    part_res = part[response_eot_id+len(eot)+1:]
+                    part_res_len = len(tokenizer_image_token(part_res, tokenizer))
+                    target[cur_len:cur_len+part_res_len] = IGNORE_INDEX
+                    cur_len += part_res_len
+        if cur_len != total_len:
+            target[:] = IGNORE_INDEX
+            print(
+                f"WARNING: tokenization mismatch: {cur_len} vs. {total_len}."
+                f" (ignored)"
+            )
+
+    return dict(
+        input_ids=input_ids,
+        labels=targets,
+    )
 
 def preprocess_v1(
     sources,
@@ -616,10 +690,13 @@ def preprocess(
     3. Tokenize the concatenated conversation;
     4. Make a deepcopy as the target. Mask human words with IGNORE_INDEX.
     """
+
     if conversation_lib.default_conversation.sep_style == conversation_lib.SeparatorStyle.PLAIN:
         return preprocess_plain(sources, tokenizer)
     if conversation_lib.default_conversation.sep_style == conversation_lib.SeparatorStyle.LLAMA_2:
         return preprocess_llama_2(sources, tokenizer, has_image=has_image)
+    if conversation_lib.default_conversation.sep_style == conversation_lib.SeparatorStyle.LLAMA_3:
+        return preprocess_llama_3(sources, tokenizer, has_image=has_image)
     if conversation_lib.default_conversation.version.startswith("v1"):
         return preprocess_v1(sources, tokenizer, has_image=has_image)
     if conversation_lib.default_conversation.version == "mpt":
@@ -840,8 +917,8 @@ def train(attn_implementation=None):
         from transformers import BitsAndBytesConfig
         bnb_model_from_pretrained_args.update(dict(
             device_map={"": training_args.device},
-            load_in_4bit=training_args.bits == 4,
-            load_in_8bit=training_args.bits == 8,
+            # load_in_4bit=training_args.bits == 4,
+            # load_in_8bit=training_args.bits == 8,
             quantization_config=BitsAndBytesConfig(
                 load_in_4bit=training_args.bits == 4,
                 load_in_8bit=training_args.bits == 8,
@@ -942,6 +1019,8 @@ def train(attn_implementation=None):
     elif model_args.version == "v0.5":
         tokenizer.pad_token = tokenizer.unk_token
     else:
+        if tokenizer.unk_token is None:
+            tokenizer.add_special_tokens({"unk_token":"<unk>"})
         tokenizer.pad_token = tokenizer.unk_token
         if model_args.version in conversation_lib.conv_templates:
             conversation_lib.default_conversation = conversation_lib.conv_templates[model_args.version]

@@ -13,6 +13,7 @@ class SeparatorStyle(Enum):
     MPT = auto()
     PLAIN = auto()
     LLAMA_2 = auto()
+    LLAMA_3 = auto()
 
 
 @dataclasses.dataclass
@@ -91,6 +92,26 @@ class Conversation:
                 else:
                     ret += ""
             ret = ret.lstrip(self.sep)
+        elif self.sep_style == SeparatorStyle.LLAMA_3:
+            wrap_sys = lambda msg: f"<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{msg}<|eot_id|>"
+            wrap_inst = lambda msg: f"<|start_header_id|>user<|end_header_id|>\n\n{msg}<|eot_id|>"
+            wrap_resp = lambda msg: f"<|start_header_id|>assistant<|end_header_id|>\n\n{msg}<|eot_id|>"
+            ret = ""
+            for i, (role, message) in enumerate(messages):
+                if i == 0:
+                    assert message, "first message should not be none"
+                    assert role == self.roles[0], "first message should come from user"
+                if message:
+                    if type(message) is tuple:
+                        message, _, _ = message
+                    if i == 0: 
+                        ret += wrap_sys(self.system) + wrap_inst(message)
+                    elif i % 2 == 1:
+                        ret += wrap_resp(message)
+                    else:
+                        ret += wrap_inst(message)
+                else:
+                    ret += ""
         elif self.sep_style == SeparatorStyle.PLAIN:
             seps = [self.sep, self.sep2]
             ret = self.system
@@ -103,7 +124,6 @@ class Conversation:
                     ret += ""
         else:
             raise ValueError(f"Invalid style: {self.sep_style}")
-
         return ret
 
     def append_message(self, role, message):
@@ -277,6 +297,20 @@ conv_llava_llama_2 = Conversation(
     sep2="</s>",
 )
 
+conv_llava_sign_llama_3 = Conversation(
+    system="You are a specialized assistant for American Sign Language (ASL)."
+    "Your capabilities include understanding and interpreting ASL content from videos provided by users."
+    "You can translate ASL into English accurately and respond to queries related to the video content, demonstrating comprehension." 
+    "Your role is to assist users effectively by leveraging sign language for communication and tasks.",
+    roles=("USER", "ASSISTANT"),
+    version="llama_v3",
+    messages=(),
+    offset=0,
+    sep_style=SeparatorStyle.LLAMA_3,
+    sep="<|begin_of_text|>",
+    sep2="<|end_of_text|>",
+)
+
 conv_mpt = Conversation(
     system="""<|im_start|>system
 A conversation between a user and an LLM-based AI assistant. The assistant gives helpful and honest answers.""",
@@ -388,8 +422,8 @@ conv_templates = {
     "v1_mmtag": conv_llava_v1_mmtag,
     "llava_llama_2": conv_llava_llama_2,
     "mpt": conv_mpt,
+    "llava_sign_llama_3": conv_llava_sign_llama_3
 }
-
 
 if __name__ == "__main__":
     print(default_conversation.get_prompt())

@@ -21,7 +21,7 @@ dependencies:
   - xz=5.4.6=h5eee18b_0
   - zlib=1.2.13=h5eee18b_0
   - pip:
-    - accelerate==0.21.0
+    - accelerate==0.27.2
     - aiofiles==23.2.1
     - albumentations==1.4.3
     - altair==5.2.0
@@ -59,7 +59,7 @@ dependencies:
     - hjson==3.1.0
     - httpcore==0.17.3
     - httpx==0.24.0
-    - huggingface-hub==0.22.1
+    - huggingface-hub==0.23.4
     - idna==3.6
     - imageio==2.34.0
     - img2dataset==1.45.0
@@ -112,7 +112,7 @@ dependencies:
     - pandas==2.2.1
     - peft==0.10.0
     - pillow==10.2.0
-    - pip==24.0
+    - pip==24.1
     - pluggy==1.4.0
     - portalocker==2.8.2
     - protobuf==4.25.3
@@ -159,7 +159,7 @@ dependencies:
     - threadpoolctl==3.4.0
     - tifffile==2024.2.12
     - timm==0.6.13
-    - tokenizers==0.15.1
+    - tokenizers==0.19.1
     - tomli==2.0.1
     - tomlkit==0.12.0
     - toolz==0.12.1
@@ -167,7 +167,7 @@ dependencies:
     - torchaudio==2.1.2+cu118
     - torchvision==0.16.2+cu118
     - tqdm==4.66.2
-    - transformers==4.37.2
+    - transformers==4.41.2
     - triton==2.1.0
     - typer==0.11.0
     - typing-extensions==4.10.0
@@ -181,3 +181,4 @@ dependencies:
     - wheel==0.43.0
     - xformers==0.0.23.post1
 prefix: /home/hltcoe/xzhang/.conda/envs/llava
+

@@ -1,3 +1,5 @@
+#!/bin/bash
+
 # Get the number of GPUs using nvidia-smi
 num_gpus=$(nvidia-smi -L | wc -l)
 

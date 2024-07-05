@@ -102,10 +102,10 @@ class TrainingArguments(transformers.TrainingArguments):
         metadata={"help": "Quantization data type to use. Should be one of `fp4` or `nf4`."}
     )
     bits: int = field(
-        default=4,
+        default=16,
         metadata={"help": "How many bits to use."}
     )
-    lora_enable: bool = True
+    lora_enable: bool = False
     lora_r: int = 64
     lora_alpha: int = 16
     lora_dropout: float = 0.05
@@ -922,9 +922,10 @@ def train(attn_implementation=None):
             quantization_config=BitsAndBytesConfig(
                 load_in_4bit=training_args.bits == 4,
                 load_in_8bit=training_args.bits == 8,
+                llm_int4_skip_modules=["mm_projector"],
                 llm_int8_skip_modules=["mm_projector"],
                 llm_int8_threshold=6.0,
-                llm_int8_has_fp16_weight=False,
+                llm_int8_has_fp16_weight=False, # must be false if --bf True
                 bnb_4bit_compute_dtype=compute_dtype,
                 bnb_4bit_use_double_quant=training_args.double_quant,
                 bnb_4bit_quant_type=training_args.quant_type # {'fp4', 'nf4'}

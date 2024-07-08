@@ -1,5 +1,5 @@
 # Sign Llvava
-![Sing Llava](images/Sign_Llava_with_context.png)
+![Sing Llava](./images/Sign_Llava_with_context.png)
 
 
 # 🌋 LLaVA: Large Language and Vision Assistant

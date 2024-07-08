@@ -1,5 +1,5 @@
 # Sign Llvava
-![Sing Llava](./images/Sign_Llava_with_context.png)
+![Sing Llava](https://github.com/JSALT2024/Sign_LLaVA/blob/main/images/Sign_LLaVA_with_context.png)
 
 
 # 🌋 LLaVA: Large Language and Vision Assistant

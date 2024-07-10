@@ -16,9 +16,12 @@
 
 import os
 import copy
+import random
 from dataclasses import dataclass, field
 import json
+import h5py
 import pickle
+from collections import defaultdict
 import logging
 import pathlib
 from typing import Dict, Optional, Sequence, List
@@ -28,13 +31,13 @@ import torch
 import transformers
 import tokenizers
 
-from llava.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
+from llava.constants import *
 from torch.utils.data import Dataset
 from llava.train.llava_trainer import LLaVATrainer
 
 from llava import conversation as conversation_lib
 from llava.model import *
-from llava.mm_utils import tokenizer_image_token
+from llava.mm_utils import tokenizer_video_token
 
 from PIL import Image
 
@@ -60,6 +63,10 @@ class ModelArguments:
     vision_tower: Optional[str] = field(default=None)
     mm_vision_select_layer: Optional[int] = field(default=-1)   # default to the last layer
     mm_hidden_size: Optional[int] = field(default=768)
+    input_dims: list = field(
+        default=[],
+        metadata={"help": "Dimensions for the visual features."}
+    ) 
     pretrain_mm_mlp_adapter: Optional[str] = field(default=None)
     mm_projector_type: Optional[str] = field(default='linear')
     mm_use_im_start_end: bool = field(default=False)
@@ -70,14 +77,45 @@ class ModelArguments:
 
 @dataclass
 class DataArguments:
-    data_path: str = field(default=None,
-                           metadata={"help": "Path to the training data."})
     lazy_preprocess: bool = False
     is_multimodal: bool = False
     s3d_path: Optional[str] = field(default=None)
-    image_folder: Optional[str] = field(default=None)
-    image_aspect_ratio: str = 'square'
-
+    visual_feature_train_paths: list = field(
+        default=[],
+        metadata={"help": "[Train set] A list of paths to the features extracted from visual encoders."}
+    )
+    visual_feature_valid_paths: list = field(
+        default=[],
+        metadata={"help": "[Valid set] A list of paths to the features extracted from visual encoders."}
+    )
+    mae_path: str = field(
+        default=None,
+        metadata={"help": "The path to the MAE visual features."}
+    )
+    sign2vec_path: str = field(
+        default=None,
+        metadata={"help": "The path to the Sign2Vec visual features."}
+    )
+    dino_path: str = field(
+        default=None,
+        metadata={"help": "The path to the dino visual features."}
+    )
+    keypoint_path: str = field(
+        default=None,
+        metadata={"help": "The path to the keypoint features."}
+    )
+    annotation_train_path: str = field(
+        default=None,
+        metadata={"help": "[Train set] Path to the annotation file."}
+    )
+    annotation_valid_path: str = field(
+        default=None,
+        metadata={"help": "[Valid set] Path to the annotation file."}
+    )
+    context_window_size: int = field(
+        default=3,
+        metadata={"help": "The number of preceding sentences to put into the context."}
+    )
 
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
@@ -318,22 +356,22 @@ def preprocess_multimodal(
 
     for source in sources:
         for sentence in source:
-            if DEFAULT_IMAGE_TOKEN in sentence['value']:
-                sentence['value'] = sentence['value'].replace(DEFAULT_IMAGE_TOKEN, '').strip()
-                sentence['value'] = DEFAULT_IMAGE_TOKEN + '\n' + sentence['value']
+            if DEFAULT_VIDEO_TOKEN in sentence['value']:
+                sentence['value'] = sentence['value'].replace(DEFAULT_VIDEO_TOKEN, '').strip()
+                sentence['value'] = DEFAULT_VIDEO_TOKEN + '\n' + sentence['value']
                 sentence['value'] = sentence['value'].strip()
                 if "mmtag" in conversation_lib.default_conversation.version:
-                    sentence['value'] = sentence['value'].replace(DEFAULT_IMAGE_TOKEN, '<Image>' + DEFAULT_IMAGE_TOKEN + '</Image>')
-            replace_token = DEFAULT_IMAGE_TOKEN
+                    sentence['value'] = sentence['value'].replace(DEFAULT_VIDEO_TOKEN, '<Video>' + DEFAULT_VIDEO_TOKEN + '</Video>')
+            replace_token = DEFAULT_VIDEO_TOKEN
             if data_args.mm_use_im_start_end:
-                replace_token = DEFAULT_IM_START_TOKEN + replace_token + DEFAULT_IM_END_TOKEN
-            sentence["value"] = sentence["value"].replace(DEFAULT_IMAGE_TOKEN, replace_token)
+                replace_token = DEFAULT_VIDEO_START_TOKEN + replace_token + DEFAULT_VIDEO_END_TOKEN
+            sentence["value"] = sentence["value"].replace(DEFAULT_VIDEO_TOKEN, replace_token)
     return sources
 
 def preprocess_llama_2(
     sources,
     tokenizer: transformers.PreTrainedTokenizer,
-    has_image: bool = False
+    has_video: bool = False
 ) -> Dict:
     conv = conversation_lib.default_conversation.copy()
     roles = {"human": conv.roles[0], "gpt": conv.roles[1]}
@@ -353,8 +391,8 @@ def preprocess_llama_2(
         conversations.append(conv.get_prompt())
 
     # Tokenize conversations
-    if has_image:
-        input_ids = torch.stack([tokenizer_image_token(prompt, tokenizer, return_tensors='pt') for prompt in conversations], dim=0)
+    if has_video:
+        input_ids = torch.stack([tokenizer_video_token(prompt, tokenizer, return_tensors='pt') for prompt in conversations], dim=0)
     else:
         input_ids = tokenizer(
             conversations,
@@ -385,9 +423,9 @@ def preprocess_llama_2(
                 break
             parts[0] += sep
 
-            if has_image:
-                round_len = len(tokenizer_image_token(rou, tokenizer))
-                instruction_len = len(tokenizer_image_token(parts[0], tokenizer)) - 2
+            if has_video:
+                round_len = len(tokenizer_video_token(rou, tokenizer))
+                instruction_len = len(tokenizer_video_token(parts[0], tokenizer)) - 2
             else:
                 round_len = len(tokenizer(rou).input_ids)
                 instruction_len = len(tokenizer(parts[0]).input_ids) - 2
@@ -412,7 +450,7 @@ def preprocess_llama_2(
 def preprocess_llama_3(
     sources,
     tokenizer: transformers.PreTrainedTokenizer,
-    has_image: bool = False
+    has_video: bool = False
 ) -> Dict:
     conv = conversation_lib.default_conversation.copy()
     roles = {"human": conv.roles[0], "gpt": conv.roles[1]}
@@ -430,47 +468,38 @@ def preprocess_llama_3(
             assert role == conv.roles[j % 2], f"{i}"
             conv.append_message(role, sentence["value"])
         conversations.append(conv.get_prompt())
-
     # Tokenize conversations
-    if has_image:
-        input_ids = torch.stack([tokenizer_image_token(prompt, tokenizer, return_tensors='pt') for prompt in conversations], dim=0)
-    else:
-        input_ids = tokenizer(
-            conversations,
-            return_tensors="pt",
-            padding="longest",
-            max_length=tokenizer.model_max_length,
-            truncation=True,
-        ).input_ids
-
+    input_ids = torch.stack([tokenizer_video_token(prompt, tokenizer, return_tensors='pt') for prompt in conversations], dim=0)
     targets = input_ids.clone()
 
     assert conv.sep_style == conversation_lib.SeparatorStyle.LLAMA_3
 
     # Mask targets
+    # targets: masked input_ids, where only the assitant inputs are kept, 
+    #          and all the previous tokens are masked with IGNORE_INDEX -100
     assistant_header = "<|start_header_id|>assistant<|end_header_id|>\n\n"
     bot = "<|begin_of_text|>"
     eot = "<|eot_id|>" 
     
-    assistant_header_len = len(tokenizer_image_token(assistant_header, tokenizer))
+    assistant_header_len = len(tokenizer_video_token(assistant_header, tokenizer))
     for conversation, target in zip(conversations, targets):
         cur_len = 0
         # targets: labels of assistant output
         total_len = int(target.ne(tokenizer.pad_token_id).sum()) # the length of non-target (non-labels)
         # cur_len: the length of non-target parts
         parts = conversation.split(assistant_header)
-        cur_len += len(tokenizer_image_token(parts[0], tokenizer))
+        cur_len += len(tokenizer_video_token(parts[0], tokenizer))
         target[:cur_len] = IGNORE_INDEX
         for part in parts[1:]:
             if part != "":
                 target[cur_len:cur_len+assistant_header_len] = IGNORE_INDEX
                 cur_len += assistant_header_len
                 response_eot_id = part.find(eot)
-                response_len = len(tokenizer_image_token(part[:response_eot_id], tokenizer)) + 1
+                response_len = len(tokenizer_video_token(part[:response_eot_id], tokenizer)) + 1
                 cur_len += response_len
                 if cur_len < total_len:
                     part_res = part[response_eot_id+len(eot)+1:]
-                    part_res_len = len(tokenizer_image_token(part_res, tokenizer))
+                    part_res_len = len(tokenizer_video_token(part_res, tokenizer))
                     target[cur_len:cur_len+part_res_len] = IGNORE_INDEX
                     cur_len += part_res_len
         if cur_len != total_len:
@@ -485,203 +514,10 @@ def preprocess_llama_3(
         labels=targets,
     )
 
-def preprocess_v1(
-    sources,
-    tokenizer: transformers.PreTrainedTokenizer,
-    has_image: bool = False
-) -> Dict:
-    conv = conversation_lib.default_conversation.copy()
-    roles = {"human": conv.roles[0], "gpt": conv.roles[1]}
-    # Apply prompt templates
-    conversations = []
-    for i, source in enumerate(sources):
-        if roles[source[0]["from"]] != conv.roles[0]:
-            # Skip the first one if it is not from human
-            source = source[1:]
-
-        conv.messages = []
-        for j, sentence in enumerate(source):
-            role = roles[sentence["from"]]
-            assert role == conv.roles[j % 2], f"{i}"
-            conv.append_message(role, sentence["value"])
-        conversations.append(conv.get_prompt())
-    # Tokenize conversations
-    if has_image:
-        input_ids = torch.stack([tokenizer_image_token(prompt, tokenizer, return_tensors='pt') for prompt in conversations], dim=0)
-    else:
-        input_ids = tokenizer(
-            conversations,
-            return_tensors="pt",
-            padding="longest",
-            max_length=tokenizer.model_max_length,
-            truncation=True,
-        ).input_ids
-
-    targets = input_ids.clone()
-
-    assert conv.sep_style == conversation_lib.SeparatorStyle.TWO
-
-    # Mask targets
-    sep = conv.sep + conv.roles[1] + ": "
-    for conversation, target in zip(conversations, targets):
-        total_len = int(target.ne(tokenizer.pad_token_id).sum())
-
-        rounds = conversation.split(conv.sep2)
-        cur_len = 1
-        target[:cur_len] = IGNORE_INDEX
-        for i, rou in enumerate(rounds):
-            if rou == "":
-                break
-
-            parts = rou.split(sep)
-            if len(parts) != 2:
-                break
-            parts[0] += sep
-
-            if has_image:
-                round_len = len(tokenizer_image_token(rou, tokenizer))
-                instruction_len = len(tokenizer_image_token(parts[0], tokenizer)) - 2
-            else:
-                round_len = len(tokenizer(rou).input_ids)
-                instruction_len = len(tokenizer(parts[0]).input_ids) - 2
-
-            if i != 0 and not tokenizer.legacy and IS_TOKENIZER_GREATER_THAN_0_14:
-                round_len -= 1
-                instruction_len -= 1
-
-            target[cur_len : cur_len + instruction_len] = IGNORE_INDEX
-
-            cur_len += round_len
-        target[cur_len:] = IGNORE_INDEX
-
-        if cur_len < tokenizer.model_max_length:
-            if cur_len != total_len:
-                target[:] = IGNORE_INDEX
-                print(
-                    f"WARNING: tokenization mismatch: {cur_len} vs. {total_len}."
-                    f" (ignored)"
-                )
-
-    return dict(
-        input_ids=input_ids,
-        labels=targets,
-    )
-
-
-def preprocess_mpt(
-    sources,
-    tokenizer: transformers.PreTrainedTokenizer,
-    has_image: bool = False
-) -> Dict:
-    conv = conversation_lib.default_conversation.copy()
-    roles = {"human": conv.roles[0], "gpt": conv.roles[1]}
-
-    # Apply prompt templates
-    conversations = []
-    for i, source in enumerate(sources):
-        if roles[source[0]["from"]] != conv.roles[0]:
-            # Skip the first one if it is not from human
-            source = source[1:]
-
-        conv.messages = []
-        for j, sentence in enumerate(source):
-            role = roles[sentence["from"]]
-            assert role == conv.roles[j % 2], f"{i}"
-            conv.append_message(role, sentence["value"])
-        conversations.append(conv.get_prompt())
-
-    # Tokenize conversations
-
-    if has_image:
-        input_ids = torch.stack([tokenizer_image_token(prompt, tokenizer, return_tensors='pt') for prompt in conversations], dim=0)
-    else:
-        input_ids = tokenizer(
-            conversations,
-            return_tensors="pt",
-            padding="longest",
-            max_length=tokenizer.model_max_length,
-            truncation=True,
-        ).input_ids
-
-    targets = input_ids.clone()
-    assert conv.sep_style == conversation_lib.SeparatorStyle.MPT
-
-    # Mask targets
-    sep = conv.sep + conv.roles[1]
-    for conversation, target in zip(conversations, targets):
-        total_len = int(target.ne(tokenizer.pad_token_id).sum())
-
-        rounds = conversation.split(conv.sep)
-        re_rounds = [conv.sep.join(rounds[:3])] # system + user + gpt
-        for conv_idx in range(3, len(rounds), 2):
-            re_rounds.append(conv.sep.join(rounds[conv_idx:conv_idx+2]))    # user + gpt
-        cur_len = 0
-        target[:cur_len] = IGNORE_INDEX
-        for i, rou in enumerate(re_rounds):
-            if rou == "":
-                break
-
-            parts = rou.split(sep)
-            if len(parts) != 2:
-                break
-            parts[0] += sep
-
-            if has_image:
-                round_len = len(tokenizer_image_token(rou, tokenizer))
-                instruction_len = len(tokenizer_image_token(parts[0], tokenizer)) - 1
-            else:
-                round_len = len(tokenizer(rou).input_ids)
-                instruction_len = len(tokenizer(parts[0]).input_ids) - 1
-
-            if i != 0 and getattr(tokenizer, 'legacy', False) and IS_TOKENIZER_GREATER_THAN_0_14:
-                round_len += 1
-                instruction_len += 1
-
-            target[cur_len : cur_len + instruction_len] = IGNORE_INDEX
-
-            cur_len += round_len
-        target[cur_len:] = IGNORE_INDEX
-
-        if cur_len < tokenizer.model_max_length:
-            if cur_len != total_len:
-                target[:] = IGNORE_INDEX
-                print(
-                    f"WARNING: tokenization mismatch: {cur_len} vs. {total_len}."
-                    f" (ignored)"
-                )
-
-    return dict(
-        input_ids=input_ids,
-        labels=targets,
-    )
-
-
-def preprocess_plain(
-    sources: Sequence[str],
-    tokenizer: transformers.PreTrainedTokenizer,
-) -> Dict:
-    # add end signal and concatenate together
-    conversations = []
-    for source in sources:
-        assert len(source) == 2
-        assert DEFAULT_IMAGE_TOKEN in source[0]['value']
-        source[0]['value'] = DEFAULT_IMAGE_TOKEN
-        conversation = source[0]['value'] + source[1]['value'] + conversation_lib.default_conversation.sep
-        conversations.append(conversation)
-    # tokenize conversations
-    
-    input_ids = [tokenizer_image_token(prompt, tokenizer, return_tensors='pt') for prompt in conversations]
-    targets = copy.deepcopy(input_ids)
-    for target, source in zip(targets, sources):
-        tokenized_len = len(tokenizer_image_token(source[0]['value'], tokenizer))
-        target[:tokenized_len] = IGNORE_INDEX
-    return dict(input_ids=input_ids, labels=targets)
-
-
 def preprocess(
     sources: Sequence[str],
     tokenizer: transformers.PreTrainedTokenizer,
-    has_image: bool = False
+    has_video: bool = False
 ) -> Dict:
     """
     Given a list of sources, each is a conversation list. This transform:
@@ -690,43 +526,10 @@ def preprocess(
     3. Tokenize the concatenated conversation;
     4. Make a deepcopy as the target. Mask human words with IGNORE_INDEX.
     """
-
-    if conversation_lib.default_conversation.sep_style == conversation_lib.SeparatorStyle.PLAIN:
-        return preprocess_plain(sources, tokenizer)
     if conversation_lib.default_conversation.sep_style == conversation_lib.SeparatorStyle.LLAMA_2:
-        return preprocess_llama_2(sources, tokenizer, has_image=has_image)
+        return preprocess_llama_2(sources, tokenizer, has_video=has_video)
     if conversation_lib.default_conversation.sep_style == conversation_lib.SeparatorStyle.LLAMA_3:
-        return preprocess_llama_3(sources, tokenizer, has_image=has_image)
-    if conversation_lib.default_conversation.version.startswith("v1"):
-        return preprocess_v1(sources, tokenizer, has_image=has_image)
-    if conversation_lib.default_conversation.version == "mpt":
-        return preprocess_mpt(sources, tokenizer, has_image=has_image)
-    # add end signal and concatenate together
-    conversations = []
-    for source in sources:
-        header = f"{conversation_lib.default_conversation.system}\n\n"
-        conversation = _add_speaker_and_signal(header, source)
-        conversations.append(conversation)
-    # tokenize conversations
-    def get_tokenize_len(prompts):
-        return [len(tokenizer_image_token(prompt, tokenizer)) for prompt in prompts]
-
-    if has_image:
-        input_ids = [tokenizer_image_token(prompt, tokenizer, return_tensors='pt') for prompt in conversations]
-    else:
-        conversations_tokenized = _tokenize_fn(conversations, tokenizer)
-        input_ids = conversations_tokenized["input_ids"]
-    targets = copy.deepcopy(input_ids)
-    for target, source in zip(targets, sources):
-        if has_image:
-            tokenized_lens = get_tokenize_len([header] + [s["value"] for s in source])
-        else:
-            tokenized_lens = _tokenize_fn([header] + [s["value"] for s in source], tokenizer)["input_ids_lens"]
-        speakers = [sentence["from"] for sentence in source]
-        _mask_targets(target, tokenized_lens, speakers)
-
-    return dict(input_ids=input_ids, labels=targets)
-
+        return preprocess_llama_3(sources, tokenizer, has_video=has_video)
 
 class LazySupervisedDataset(Dataset):
     """Dataset for supervised fine-tuning."""
@@ -796,7 +599,7 @@ class LazySupervisedDataset(Dataset):
         data_dict = preprocess(
             sources,
             self.tokenizer,
-            has_image=('image' in self.list_data_dict[i]))
+            has_video=('image' in self.list_data_dict[i]))
         if isinstance(i, int):
             data_dict = dict(input_ids=data_dict["input_ids"][0],
                              labels=data_dict["labels"][0])
@@ -810,6 +613,55 @@ class LazySupervisedDataset(Dataset):
             data_dict['image'] = torch.zeros(3, crop_size['height'], crop_size['width'])
         return data_dict
 
+def preprocess(
+    sources: Sequence[str],
+    tokenizer: transformers.PreTrainedTokenizer,
+    has_video: bool = False
+) -> Dict:
+    """
+    Given a list of sources, each is a conversation list. This transform:
+    1. Add signal '### ' at the beginning each sentence, with end signal '\n';
+    2. Concatenate conversations together;
+    3. Tokenize the concatenated conversation;
+    4. Make a deepcopy as the target. Mask human words with IGNORE_INDEX.
+    """
+
+    if conversation_lib.default_conversation.sep_style == conversation_lib.SeparatorStyle.PLAIN:
+        return preprocess_plain(sources, tokenizer)
+    if conversation_lib.default_conversation.sep_style == conversation_lib.SeparatorStyle.LLAMA_2:
+        return preprocess_llama_2(sources, tokenizer, has_video=has_video)
+    if conversation_lib.default_conversation.sep_style == conversation_lib.SeparatorStyle.LLAMA_3:
+        return preprocess_llama_3(sources, tokenizer, has_video=has_video)
+    if conversation_lib.default_conversation.version.startswith("v1"):
+        return preprocess_v1(sources, tokenizer, has_video=has_video)
+    if conversation_lib.default_conversation.version == "mpt":
+        return preprocess_mpt(sources, tokenizer, has_video=has_video)
+    # add end signal and concatenate together
+    conversations = []
+    for source in sources:
+        header = f"{conversation_lib.default_conversation.system}\n\n"
+        conversation = _add_speaker_and_signal(header, source)
+        conversations.append(conversation)
+    # tokenize conversations
+    def get_tokenize_len(prompts):
+        return [len(tokenizer_video_token(prompt, tokenizer)) for prompt in prompts]
+
+    if has_video:
+        input_ids = [tokenizer_video_token(prompt, tokenizer, return_tensors='pt') for prompt in conversations]
+    else:
+        conversations_tokenized = _tokenize_fn(conversations, tokenizer)
+        input_ids = conversations_tokenized["input_ids"]
+    targets = copy.deepcopy(input_ids)
+    for target, source in zip(targets, sources):
+        if has_video:
+            tokenized_lens = get_tokenize_len([header] + [s["value"] for s in source])
+        else:
+            tokenized_lens = _tokenize_fn([header] + [s["value"] for s in source], tokenizer)["input_ids_lens"]
+        speakers = [sentence["from"] for sentence in source]
+        _mask_targets(target, tokenized_lens, speakers)
+
+    return dict(input_ids=input_ids, labels=targets)
+
 class LazySupervisedS3DFeatureDataset(LazySupervisedDataset):
     """Dataset for supervised fine-tuning on S3D features."""
     def __init__(self, data_path: str,
@@ -818,12 +670,19 @@ class LazySupervisedS3DFeatureDataset(LazySupervisedDataset):
         super(LazySupervisedS3DFeatureDataset, self).__init__(data_path, tokenizer, data_args)
         with open(self.data_args.s3d_path, 'rb') as f:
             self.s3d = pickle.load(f)
+        super(LazySupervisedDataset, self).__init__()
+        list_data_dict = json.load(open(data_path, "r"))
+        rank0_print("Formatting inputs...Skip in lazy mode")
+        self.tokenizer = tokenizer
+        self.list_data_dict = list_data_dict
+        self.data_args = data_args
 
     def __getitem__(self, i) -> Dict[str, torch.Tensor]:
         sources = self.list_data_dict[i]
         if isinstance(i, int):
             sources = [sources]
         assert len(sources) == 1, "Don't know why it is wrapped to a list"  # FIXME
+        # sources: json, 'image': 'train/06December_2011_Tuesday_tagesschau-6843'
         if 'image' in sources[0]:
             image_file = self.list_data_dict[i]['image']
             image = self.s3d[image_file] # tensor(T//4, 832)
@@ -836,7 +695,7 @@ class LazySupervisedS3DFeatureDataset(LazySupervisedDataset):
         data_dict = preprocess(
             sources,
             self.tokenizer,
-            has_image=('image' in self.list_data_dict[i]))
+            has_video=('image' in self.list_data_dict[i]))
         if isinstance(i, int):
             data_dict = dict(input_ids=data_dict["input_ids"][0],
                              labels=data_dict["labels"][0])
@@ -849,6 +708,81 @@ class LazySupervisedS3DFeatureDataset(LazySupervisedDataset):
             crop_size = self.data_args.image_processor.crop_size
             data_dict['image'] = torch.zeros(3, crop_size['height'], crop_size['width'])
         data_dict['s3d'] = True
+        return data_dict
+
+class LazySupervisedSignContextDataset(Dataset):
+    """Dataset for supervised training for visual features with context."""
+    def __init__(self, tokenizer: transformers.PreTrainedTokenizer,
+                 data_args: DataArguments,
+                 split: str):
+        super(LazySupervisedSignContextDataset, self).__init__(tokenizer, data_args)
+        self.data_args = data_args
+        self.tokenizer = tokenizer
+        self.split = split
+        if self.split == "train":
+            annotation_path = data_args.annotation_train_path
+        elif self.split == "valid":
+            annotation_path = data_args.annotation_valid_path
+        self.annotation = json.load(open(annotation_path, "r")) 
+        # {{video_id: {clip_id: {"translation": ..., "paraphrases": [A, B, C] }}},
+        # }
+        visual_features = []
+        if self.split == "train":
+            visual_feature_paths = data_args.visual_feature_train_paths
+        elif self.split == "valid":
+            visual_feature_paths = data_args.visual_feature_valid_paths
+        for vf in visual_feature_paths:
+            with gzip.open(vf, 'rb') as f:
+                visual_features.append(pickle.load(f))
+        self.visual_features = {}
+        for visual_feature in visual_features:
+            for video_id, clip_dict in visual_feature.items():
+                if video_id not in self.visual_features:
+                    self.visual_features[video_id] = defaultdict(list)
+                for clip_id, feature in clip_dict.items():
+                    self.visual_features[video_id][clip_id].append(feature)
+        self.num_visual_features = len(visual_features)
+        del visual_features
+        # self.visual_features: [ {video_id: {clip_id: R(NxV), clip_id:...}, ..., ...}, 
+        #   {video_id: ........}}}, 
+        #  ...]
+        self.list_data = [] # [(video_id, clip_id), ...]
+        for video_id, clip_dict in self.annoation.items():
+            for clip_id in clip_dict:
+                self.list_data.append((video_id, clip_id))
+        self.prompt = "Given the preceding sentences as context, translate the American sign language video into English. "
+
+        # TODO
+
+
+    def __getitem__(self, i) -> Dict[str, torch.Tensor]:
+        video_id, clip_id = self.list_data[i]
+        # sources: json, 'image': 'train/06December_2011_Tuesday_tagesschau-6843'
+        trans_dict = self.annotation[video_id][clip_id]
+        translation = random.choice([trans_dict['paraphrases'].append(trans_dict['translation'])])
+        visual_feature_lst = self.visual_features[video_id][clip_id]
+        context = []
+        for ci in range(max(clip_id-self.data_args.context_window_size, 0), clip_id):
+            context.append(self.annotation[video_id][ci]['translation'])
+
+        source = {}
+        source['id'] = "({0},{1})".format(str(video_id), str(clip_id))
+        source['conversations'] = [{'from': 'human', 
+                'value':'<video>'*self.num_visual_inputs+'\n'+self.prompt+' '.join(context)},
+                {'from': 'gpt',
+                'value':translation}]
+        sources = [source] # wrap into a list to match the original implementation
+        sources = preprocess_multimodal( # assign a token / tokens for <video>
+            copy.deepcopy([e['conversations'] for e in sources]),
+            self.data_args
+        )
+        data_dict = preprocess(
+            sources,
+            self.tokenizer,
+            has_video=True)
+        data_dict = dict(input_ids=data_dict["input_ids"][0],
+                         labels=data_dict["labels"][0])
+        data_dict['video'] = visual_feature_lst
         return data_dict
 
 @dataclass
@@ -931,7 +865,6 @@ def train(attn_implementation=None):
                 bnb_4bit_quant_type=training_args.quant_type # {'fp4', 'nf4'}
             )
         ))
-
     if model_args.vision_tower is not None:
         if 'mpt' in model_args.model_name_or_path:
             config = transformers.AutoConfig.from_pretrained(model_args.model_name_or_path, trust_remote_code=True)
@@ -1028,41 +961,40 @@ def train(attn_implementation=None):
         else:
             conversation_lib.default_conversation = conversation_lib.conv_templates["vicuna_v1"]
 
-    if model_args.vision_tower is not None:
-        model.get_model().initialize_vision_modules(
-            model_args=model_args,
-            fsdp=training_args.fsdp
-        )
-        
-        vision_tower = model.get_vision_tower()
-        vision_tower.to(dtype=torch.bfloat16 if training_args.bf16 else torch.float16, device=training_args.device)
+    model.get_model().initialize_vision_modules(
+        model_args=model_args,
+        fsdp=training_args.fsdp
+    )
+    
+    vision_tower = model.get_vision_tower()
+    vision_tower.to(dtype=torch.bfloat16 if training_args.bf16 else torch.float16, device=training_args.device)
 
-        data_args.image_processor = vision_tower.image_processor
-        data_args.is_multimodal = True
+    data_args.image_processor = vision_tower.image_processor
+    data_args.is_multimodal = True
 
-        model.config.image_aspect_ratio = data_args.image_aspect_ratio
-        model.config.tokenizer_padding_side = tokenizer.padding_side
-        model.config.tokenizer_model_max_length = tokenizer.model_max_length
+    model.config.image_aspect_ratio = data_args.image_aspect_ratio
+    model.config.tokenizer_padding_side = tokenizer.padding_side
+    model.config.tokenizer_model_max_length = tokenizer.model_max_length
 
-        model.config.tune_mm_mlp_adapter = training_args.tune_mm_mlp_adapter = model_args.tune_mm_mlp_adapter
-        if model_args.tune_mm_mlp_adapter:
-            model.requires_grad_(False)
-            for p in model.get_model().mm_projector.parameters():
-                p.requires_grad = True
+    model.config.tune_mm_mlp_adapter = training_args.tune_mm_mlp_adapter = model_args.tune_mm_mlp_adapter
+    if model_args.tune_mm_mlp_adapter:
+        model.requires_grad_(False)
+        for p in model.get_model().mm_projector.parameters():
+            p.requires_grad = True
 
-        model.config.freeze_mm_mlp_adapter = training_args.freeze_mm_mlp_adapter
-        if training_args.freeze_mm_mlp_adapter:
-            for p in model.get_model().mm_projector.parameters():
-                p.requires_grad = False
+    model.config.freeze_mm_mlp_adapter = training_args.freeze_mm_mlp_adapter
+    if training_args.freeze_mm_mlp_adapter:
+        for p in model.get_model().mm_projector.parameters():
+            p.requires_grad = False
 
-        if training_args.bits in [4, 8]:
-            model.get_model().mm_projector.to(dtype=compute_dtype, device=training_args.device)
+    if training_args.bits in [4, 8]:
+        model.get_model().mm_projector.to(dtype=compute_dtype, device=training_args.device)
 
-        model.config.mm_use_im_start_end = data_args.mm_use_im_start_end = model_args.mm_use_im_start_end
-        model.config.mm_projector_lr = training_args.mm_projector_lr
-        training_args.use_im_start_end = model_args.mm_use_im_start_end
-        model.config.mm_use_im_patch_token = model_args.mm_use_im_patch_token
-        model.initialize_vision_tokenizer(model_args, tokenizer=tokenizer)
+    model.config.mm_use_im_start_end = data_args.mm_use_im_start_end = model_args.mm_use_im_start_end
+    model.config.mm_projector_lr = training_args.mm_projector_lr
+    training_args.use_im_start_end = model_args.mm_use_im_start_end
+    model.config.mm_use_im_patch_token = model_args.mm_use_im_patch_token
+    model.initialize_vision_tokenizer(model_args, tokenizer=tokenizer)
 
     if training_args.bits in [4, 8]:
         from peft.tuners.lora import LoraLayer

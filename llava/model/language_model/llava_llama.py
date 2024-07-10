@@ -30,12 +30,11 @@ from ..llava_arch import LlavaMetaModel, LlavaMetaForCausalLM
 class LlavaConfig(LlamaConfig):
     model_type = "llava_llama"
 
-
-class LlavaLlamaModel(LlavaMetaModel, LlamaModel):
+class SignLlavaLlamaModel(LlavaSignProjector, LlamaModel): # adpated from LlavaLlamaModel
     config_class = LlavaConfig
 
     def __init__(self, config: LlamaConfig):
-        super(LlavaLlamaModel, self).__init__(config)
+        super(SignLlavaLlamaModel, self).__init__(config)
 
 
 class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
@@ -43,7 +42,7 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
 
     def __init__(self, config):
         super(LlamaForCausalLM, self).__init__(config)
-        self.model = LlavaLlamaModel(config)
+        self.model = SignLlavaLlamaModel(config)
         self.pretraining_tp = config.pretraining_tp
         self.vocab_size = config.vocab_size
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)

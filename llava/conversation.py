@@ -43,35 +43,7 @@ class Conversation:
             else:
                 messages[0] = (init_role, "<image>\n" + init_msg)
 
-        if self.sep_style == SeparatorStyle.SINGLE:
-            ret = self.system + self.sep
-            for role, message in messages:
-                if message:
-                    if type(message) is tuple:
-                        message, _, _ = message
-                    ret += role + ": " + message + self.sep
-                else:
-                    ret += role + ":"
-        elif self.sep_style == SeparatorStyle.TWO:
-            seps = [self.sep, self.sep2]
-            ret = self.system + seps[0]
-            for i, (role, message) in enumerate(messages):
-                if message:
-                    if type(message) is tuple:
-                        message, _, _ = message
-                    ret += role + ": " + message + seps[i % 2]
-                else:
-                    ret += role + ":"
-        elif self.sep_style == SeparatorStyle.MPT:
-            ret = self.system + self.sep
-            for role, message in messages:
-                if message:
-                    if type(message) is tuple:
-                        message, _, _ = message
-                    ret += role + message + self.sep
-                else:
-                    ret += role
-        elif self.sep_style == SeparatorStyle.LLAMA_2:
+        if self.sep_style == SeparatorStyle.LLAMA_2:
             wrap_sys = lambda msg: f"<<SYS>>\n{msg}\n<</SYS>>\n\n" if len(msg) > 0 else msg
             wrap_inst = lambda msg: f"[INST] {msg} [/INST]"
             ret = ""
@@ -298,9 +270,9 @@ conv_llava_llama_2 = Conversation(
 )
 
 conv_llava_sign_llama_3 = Conversation(
-    system="You are a specialized assistant for American Sign Language (ASL)."
-    "Your capabilities include understanding and interpreting ASL content from videos provided by users."
-    "You can translate ASL into English accurately and respond to queries related to the video content, demonstrating comprehension." 
+    system="You are a specialized assistant for American Sign Language (ASL). "
+    "Your capabilities include understanding and interpreting ASL content from videos provided by users. "
+    "You can translate ASL into English accurately and respond to queries related to the video content, demonstrating comprehension. " 
     "Your role is to assist users effectively by leveraging sign language for communication and tasks.",
     roles=("USER", "ASSISTANT"),
     version="llama_v3",

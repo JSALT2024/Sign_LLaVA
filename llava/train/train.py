@@ -430,7 +430,6 @@ def preprocess_llama_3(
             assert role == conv.roles[j % 2], f"{i}"
             conv.append_message(role, sentence["value"])
         conversations.append(conv.get_prompt())
-
     # Tokenize conversations
     if has_image:
         input_ids = torch.stack([tokenizer_image_token(prompt, tokenizer, return_tensors='pt') for prompt in conversations], dim=0)
@@ -459,6 +458,8 @@ def preprocess_llama_3(
         total_len = int(target.ne(tokenizer.pad_token_id).sum()) # the length of non-target (non-labels)
         # cur_len: the length of non-target parts
         parts = conversation.split(assistant_header)
+        # parts[0]: ".....\nTranslate the German sign language video into German.<|eot_id|>"
+        # parts[1]: "von westen lockert es ... donner .<|eot_id|>"
         cur_len += len(tokenizer_image_token(parts[0], tokenizer))
         target[:cur_len] = IGNORE_INDEX
         for part in parts[1:]:
@@ -800,7 +801,6 @@ class LazySupervisedDataset(Dataset):
         if isinstance(i, int):
             data_dict = dict(input_ids=data_dict["input_ids"][0],
                              labels=data_dict["labels"][0])
-
         # image exist in the data
         if 'image' in self.list_data_dict[i]:
             data_dict['image'] = image
@@ -840,7 +840,6 @@ class LazySupervisedS3DFeatureDataset(LazySupervisedDataset):
         if isinstance(i, int):
             data_dict = dict(input_ids=data_dict["input_ids"][0],
                              labels=data_dict["labels"][0])
-
         # image exist in the data
         if 'image' in self.list_data_dict[i]:
             data_dict['image'] = image

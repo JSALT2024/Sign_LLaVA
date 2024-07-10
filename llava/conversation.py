@@ -42,7 +42,6 @@ class Conversation:
                 messages.insert(1, (self.roles[1], "Received."))
             else:
                 messages[0] = (init_role, "<image>\n" + init_msg)
-
         if self.sep_style == SeparatorStyle.SINGLE:
             ret = self.system + self.sep
             for role, message in messages:

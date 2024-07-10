@@ -9,7 +9,7 @@ PROMPT_VERSION=llava_sign_llama_3 #llava_llama_2
 ########### USE THIS FOR BOTH ###########
 #module load gcc/11.3.0
 module load cuda/12.1
-cd /export/fs04/xzhan138/Sign_LLaVA
+cd /export/fs06/xzhan138/Sign_LLaVA
 
 CUDA_ID=$CUDA_VISIBLE_DEVICES
 source scripts/get_gpu_ids.sh

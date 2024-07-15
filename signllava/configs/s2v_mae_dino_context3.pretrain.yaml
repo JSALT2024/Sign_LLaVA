@@ -21,8 +21,8 @@ TrainingArguments:
   gradient_checkpointing: True
   double_quant: True # Compress the quantization statistics through double quantization.
   quant_type: nf4
-  bits: 4 # 4, 8 to enable quantization
-  lora_enable: True
+  bits: 16 # 4, 8 to enable quantization
+  lora_enable: False
   lora_r: 64
   lora_alpha: 16
   lora_dropout: 0.05

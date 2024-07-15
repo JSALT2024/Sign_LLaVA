@@ -44,7 +44,7 @@ if __name__ == '__main__':
     pose_files = {}
     for group_id in range(number_of_groups+1):
         mae_files[f'mae_{group_id}'] = h5py.File(os.path.join(output_path, 'mae', f'mae.train.{group_id}.h5'), 'w')
-        dino_files[f'dino_{group_id}'] = h5py.File(os.path.join(output_path, 'dino', f'dino.train{group_id}.h5'), 'w')
+        dino_files[f'dino_{group_id}'] = h5py.File(os.path.join(output_path, 'dino', f'dino.train.{group_id}.h5'), 'w')
         sign2vec_files[f'sign2vec_{group_id}'] = h5py.File(os.path.join(output_path, 'sign2vec', f'sign2vec.train.{group_id}.h5'), 'w')
         pose_files[f'pose_{group_id}'] = h5py.File(os.path.join(output_path, 'pose', f'pose.train.{group_id}.h5'), 'w')
     for video_id, video in enumerate(video_names):

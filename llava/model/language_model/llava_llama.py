@@ -24,17 +24,122 @@ from transformers import AutoConfig, AutoModelForCausalLM, \
 from transformers.modeling_outputs import CausalLMOutputWithPast
 from transformers.generation.utils import GenerateOutput
 
-from ..llava_arch import LlavaMetaModel, LlavaMetaForCausalLM
+from ..llava_arch import *
 
 
 class LlavaConfig(LlamaConfig):
     model_type = "llava_llama"
 
-class SignLlavaLlamaModel(LlavaSignProjector, LlamaModel): # adpated from LlavaLlamaModel
+class SignLlavaLlamaModel(LlamaModel, SignLlavaProjector): # adpated from LlavaLlamaModel
     config_class = LlavaConfig
 
-    def __init__(self, config: LlamaConfig):
-        super(SignLlavaLlamaModel, self).__init__(config)
+    def __init__(self, sign_model_args, sign_data_args, config: LlamaConfig):
+        LlamaModel.__init__(self, config)
+        SignLlavaProjector.__init__(self, sign_model_args, sign_data_args, config)
+        
+class SignLlavaLlamaForCausalLM(LlamaForCausalLM, SignLlavaForCausalLM):
+    # adapted from LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM)
+    config_class = LlavaConfig
+
+    def __init__(self, config, sign_model_args, sign_data_args):
+        super(LlamaForCausalLM, self).__init__(config)
+        self.config = config
+        self.model = SignLlavaLlamaModel(sign_model_args, sign_data_args, self.config)
+        self.pretraining_tp = config.pretraining_tp
+        self.vocab_size = config.vocab_size
+        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+        # Initialize weights and apply final processing
+        self.post_init()
+
+    def get_model(self):
+        return self.model
+
+    def forward(
+        self,
+        input_ids: torch.LongTensor = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_values: Optional[List[torch.FloatTensor]] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        labels: Optional[torch.LongTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        visual_features: list = [],
+        video_sep_ids: torch.LongTensor = None,
+        return_dict: Optional[bool] = None,
+    ) -> Union[Tuple, CausalLMOutputWithPast]:
+        (
+            input_ids,
+            position_ids,
+            attention_mask,
+            past_key_values,
+            inputs_embeds,
+            labels
+        ) = self.prepare_inputs_and_labels(
+            input_ids,
+            position_ids,
+            attention_mask,
+            past_key_values,
+            labels,
+            video_sep_ids,
+            visual_features
+        )
+        return super().forward(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_values=past_key_values,
+            inputs_embeds=inputs_embeds,
+            labels=labels,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict
+        )
+
+    @torch.no_grad()
+    ##TODO
+    def generate(
+        self,
+        inputs: Optional[torch.Tensor] = None,
+        visual_features: list = [],
+        **kwargs,
+    ) -> Union[GenerateOutput, torch.LongTensor]:
+        position_ids = kwargs.pop("position_ids", None)
+        attention_mask = kwargs.pop("attention_mask", None)
+        (
+            input_ids,
+            position_ids,
+            attention_mask,
+            past_key_values,
+            inputs_embeds,
+            labels
+        ) = self.prepare_inputs_and_labels(
+            input_ids,
+            position_ids,
+            attention_mask,
+            past_key_values,
+            labels,
+            visual_features
+        )
+        return super().generate(
+            position_ids=position_ids,
+            attention_mask=attention_mask,
+            inputs_embeds=inputs_embeds,
+            **kwargs
+        )
+    
+    ###TODO
+    def prepare_inputs_for_generation(self, input_ids, past_key_values=None,
+                                      inputs_embeds=None, **kwargs):
+        images = kwargs.pop("images", None)
+        image_sizes = kwargs.pop("image_sizes", None)
+        inputs = super().prepare_inputs_for_generation(
+            input_ids, past_key_values=past_key_values, inputs_embeds=inputs_embeds, **kwargs
+        )
+        return inputs
+    ###TODO
 
 
 class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):

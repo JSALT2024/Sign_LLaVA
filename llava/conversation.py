@@ -375,7 +375,7 @@ Answer the questions.""",
     sep="<|im_end|>",
 )
 
-default_conversation = conv_vicuna_v1
+default_conversation = conv_llava_sign_llama_3
 conv_templates = {
     "default": conv_vicuna_v0,
     "v0": conv_vicuna_v0,

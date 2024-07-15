@@ -18,35 +18,33 @@ from abc import ABC, abstractmethod
 import torch
 import torch.nn as nn
 
-from .multimodal_encoder.builder import build_vision_tower
 from .multimodal_projector.builder import build_vision_projector
 
 from llava.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 
 from llava.mm_utils import get_anyres_image_grid_shape
 
-from llava.constants import INPUT_TYPES
+from llava.constants import *
 
-class LlavaSignProjector: # adapted from LlavaMetaModel
-
-    def __init__(self, config):
-        super(LlavaSignProjector, self).__init__(config, model_args)
+class SignLlavaProjector: # adapted from LlavaMetaModel
+    def __init__(self, sign_model_args, sign_data_args, config):
+        super().__init__()
         self.config = config
-        self.model_args = model_args
-        projector_configs = model_args['projectors']
+        self.sign_model_args = sign_model_args
+        projector_configs = sign_model_args['projectors']
         for input_type in INPUT_TYPES:
             projector_name = "{}_projector".format(input_type)
             projector_args = projector_configs[input_type]
-            if projector_args["enable_input"]:
+            if sign_data_args['visual_features'][input_type]["enable_input"]:
                 projector_type = getattr(projector_args, 'mm_projector_type', 'linear')
                 mm_hidden_size = projector_args['dim']
                 hidden_size = self.config.hidden_size
                 exec(f"self.{projector_name}=build_vision_projector(projector_type, mm_hidden_size, hidden_size)")
             else:
                 exec(f"self.{projector_name}=None")
-    
-    def initialize_projectors(self):
-        projector_configs = self.model_args['projectors']
+
+    def initialize_projectors(self): # adapted from initialize_vision_modules, it seems it is never called! 
+        projector_configs = self.sign_model_args['projectors']
         for input_type in INPUT_TYPES:
             projector_name = "{}_projector".format(input_type)
             projector_args = projector_configs[input_type]
@@ -64,14 +62,14 @@ class LlavaSignProjector: # adapted from LlavaMetaModel
                     eval(f"self.{projector_name}").load_state_dict(get_w(projector_weights, f'{projector_name}'))
                     print(f"Loaded the pretrained weights for {projector_name} from {pretrained_ckpt}.")
 
-class SignLlavaForCausalLM(ABC):
+class SignLlavaForCausalLM(ABC): # adapted from LlavaMetaForCausalLM(ABC)
     @abstractmethod
     def get_model(self):
         pass
 
-    
     def prepare_inputs_and_labels(
         self, input_ids, position_ids, attention_mask, past_key_values, labels,
+        video_sep_ids,
         visual_features):
         # Inputs are batched!
         # visual_features: a list of dictionaries: {"sign2vec": torch.tensor}
@@ -91,7 +89,6 @@ class SignLlavaForCausalLM(ABC):
                 projected_vf_dict[key] = eval(f"self.get_model().{key}_projector(visual_feature)")
             projected_visual_features.append(projected_vf_dict)
         del visual_features
-
         # Initialize attention_mask, position_ids, labels
         if attention_mask is None:
             attention_mask = torch.ones_like(input_ids, dtype=torch.bool)
@@ -107,14 +104,14 @@ class SignLlavaForCausalLM(ABC):
         cur_image_idx = 0
         for batch_idx, cur_input_ids in enumerate(input_ids):
             # Step 2. Separate the inputs to [tokens before the visual features] <video> [tokens after the visual features].
-            image_token_indices = [-1] + torch.where(cur_input_ids == VIDEO_TOKEN_INDEX)[0].tolist() + [cur_input_ids.shape[0]]
+            video_token_indices = [-1] + torch.where(cur_input_ids == VIDEO_TOKEN_INDEX)[0].tolist() + [cur_input_ids.shape[0]]
             # image_token_indices: [-1, <video> loc, len(input_ids)]
             cur_input_ids_noim = [] # noim: no image, two parts: half before <video>, half after
             cur_labels_noim = [] # two parts: half before <video>, half after
             cur_labels = labels[batch_idx]
-            for i in range(len(image_token_indices) - 1):
-                cur_input_ids_noim.append(cur_input_ids[image_token_indices[i]+1:image_token_indices[i+1]])
-                cur_labels_noim.append(cur_labels[image_token_indices[i]+1:image_token_indices[i+1]])
+            for i in range(len(video_token_indices) - 1):
+                cur_input_ids_noim.append(cur_input_ids[video_token_indices[i]+1:video_token_indices[i+1]])
+                cur_labels_noim.append(cur_labels[video_token_indices[i]+1:video_token_indices[i+1]])
             split_sizes = [x.shape[0] for x in cur_labels_noim]
             # Step 3. Get embeddings.
             # Get text embeddings.
@@ -124,25 +121,21 @@ class SignLlavaForCausalLM(ABC):
             cur_new_input_embeds = []
             cur_new_labels = []
 
+            # <video_start><video><video_end> -> <video_start>rep1<video_end><video_start>rep2<video_end>
             cur_new_input_embeds.append(cur_input_embeds_no_im[0])
             cur_new_labels.append(cur_labels_noim[0])
             cur_projected_feature_dict = projected_visual_features[batch_idx]
-            for input_type in INPUT_TYPES:
-                if input_type in cur_projected_feature_dict:
-                    cur_new_input_embeds.append()
-
-
+            video_sep_embeds = self.get_model().embed_tokens(video_sep_ids[0])
+            visual_embeddings = []
+            for input_type in cur_projected_feature_dict:
+                if visual_embeddings != []:
+                    visual_embeddings.append(video_sep_embeds)
+                visual_embeddings.append(cur_projected_feature_dict[input_type])
+            cur_visual_embeddings = torch.cat(visual_embeddings)
+            cur_new_input_embeds.append(cur_visual_embeddings)
+            cur_new_labels.append(torch.full((cur_visual_embeddings.shape[0],), IGNORE_INDEX, device=cur_labels.device, dtype=cur_labels.dtype))
             cur_new_input_embeds.append(cur_input_embeds_no_im[1])
             cur_new_labels.append(cur_labels_noim[1])
-
-            for i in range(num_images + 1):
-                cur_new_input_embeds.append(cur_input_embeds_no_im[i])
-                cur_new_labels.append(cur_labels_noim[i])
-                if i < num_images:
-                    cur_image_features = image_features[cur_image_idx]
-                    cur_image_idx += 1
-                    cur_new_input_embeds.append(cur_image_features)
-                    cur_new_labels.append(torch.full((cur_image_features.shape[0],), IGNORE_INDEX, device=cur_labels.device, dtype=cur_labels.dtype))
             """
             cur_new_labels:
             [tensor([-100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100,
@@ -206,8 +199,44 @@ class SignLlavaForCausalLM(ABC):
                     position_ids[i, :cur_len] = torch.arange(0, cur_len, dtype=position_ids.dtype, device=position_ids.device)
 
         new_input_embeds = torch.stack(new_input_embeds_padded, dim=0)
+        new_labels = torch.stack(new_labels, dim=0)
 
         return None, position_ids, attention_mask, past_key_values, new_input_embeds, new_labels
+
+    def initialize_vision_tokenizer(self, model_args, tokenizer):
+        num_new_tokens = tokenizer.add_tokens([DEFAULT_VIDEO_START_TOKEN, DEFAULT_VIDEO_END_TOKEN], special_tokens=True)
+        self.resize_token_embeddings(len(tokenizer))
+
+        if num_new_tokens > 0:
+            input_embeddings = self.get_input_embeddings().weight.data
+            output_embeddings = self.get_output_embeddings().weight.data
+
+            input_embeddings_avg = input_embeddings[:-num_new_tokens].mean(
+                dim=0, keepdim=True)
+            output_embeddings_avg = output_embeddings[:-num_new_tokens].mean(
+                dim=0, keepdim=True)
+
+            input_embeddings[-num_new_tokens:] = input_embeddings_avg
+            output_embeddings[-num_new_tokens:] = output_embeddings_avg
+
+        if model_args.tune_mm_mlp_adapter:
+            for p in self.get_input_embeddings().parameters():
+                p.requires_grad = True
+            for p in self.get_output_embeddings().parameters():
+                p.requires_grad = False
+
+        if model_args.pretrain_mm_mlp_adapter:
+            for input_type in INPUT_TYPES:
+                exec(f"{input_type}_projector_weights = torch.load(model_args.pretrain_mm_mlp_adapter, map_location='cpu')")
+                exec(f"embed_tokens_weight = {input_type}_projector_weights['model.embed_tokens.weight']")
+            assert num_new_tokens == 2
+            if input_embeddings.shape == embed_tokens_weight.shape:
+                input_embeddings[-num_new_tokens:] = embed_tokens_weight[-num_new_tokens:]
+            elif embed_tokens_weight.shape[0] == num_new_tokens:
+                input_embeddings[-num_new_tokens:] = embed_tokens_weight
+            else:
+                raise ValueError(f"Unexpected embed_tokens_weight shape. Pretrained: {embed_tokens_weight.shape}. Current: {input_embeddings.shape}. Numer of new tokens: {num_new_tokens}.")
+
 
 class LlavaMetaForCausalLM(ABC):
 

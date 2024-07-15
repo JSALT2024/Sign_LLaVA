@@ -6,7 +6,7 @@ import math
 import ast
 
 from transformers import StoppingCriteria
-from llava.constants import IMAGE_TOKEN_INDEX
+from llava.constants import *
 
 
 def select_best_resolution(original_size, possible_resolutions):
@@ -183,7 +183,7 @@ def process_images(images, image_processor, model_cfg):
 
 
 def tokenizer_video_token(prompt, tokenizer, video_token_index=VIDEO_TOKEN_INDEX, return_tensors=None):
-    prompt_chunks = [tokenizer(chunk).input_ids for chunk in prompt.split(DEFAULT_VIDEO_TOKEN)]
+    prompt_chunks = [tokenizer(chunk, add_special_tokens=False).input_ids for chunk in prompt.split(DEFAULT_VIDEO_TOKEN)]
 
     def insert_separator(X, sep):
         return [ele for sublist in zip(X, [sep]*len(X)) for ele in sublist][:-1]

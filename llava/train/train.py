@@ -20,10 +20,11 @@ import random
 from dataclasses import dataclass, field
 import json
 import h5py
-import pickle
+import yaml
 from collections import defaultdict
 import logging
 import pathlib
+import numpy
 from typing import Dict, Optional, Sequence, List
 
 import torch
@@ -39,11 +40,7 @@ from llava import conversation as conversation_lib
 from llava.model import *
 from llava.mm_utils import tokenizer_video_token
 
-from PIL import Image
-
-
 local_rank = None
-
 
 def rank0_print(*args):
     if local_rank == 0:
@@ -56,66 +53,11 @@ IS_TOKENIZER_GREATER_THAN_0_14 = version.parse(tokenizers.__version__) >= versio
 
 @dataclass
 class ModelArguments:
-    model_name_or_path: Optional[str] = field(default="facebook/opt-125m")
+    model_name_or_path: Optional[str] = field(default="meta/Meta-Llama-3-8B-Instruct")
     version: Optional[str] = field(default="v0")
     freeze_backbone: bool = field(default=False)
     tune_mm_mlp_adapter: bool = field(default=False)
-    vision_tower: Optional[str] = field(default=None)
-    mm_vision_select_layer: Optional[int] = field(default=-1)   # default to the last layer
-    mm_hidden_size: Optional[int] = field(default=768)
-    input_dims: list = field(
-        default=[],
-        metadata={"help": "Dimensions for the visual features."}
-    ) 
     pretrain_mm_mlp_adapter: Optional[str] = field(default=None)
-    mm_projector_type: Optional[str] = field(default='linear')
-    mm_use_im_start_end: bool = field(default=False)
-    mm_use_im_patch_token: bool = field(default=True)
-    mm_patch_merge_type: Optional[str] = field(default='flat')
-    mm_vision_select_feature: Optional[str] = field(default="patch")
-
-
-@dataclass
-class DataArguments:
-    lazy_preprocess: bool = False
-    is_multimodal: bool = False
-    s3d_path: Optional[str] = field(default=None)
-    visual_feature_train_paths: list = field(
-        default=[],
-        metadata={"help": "[Train set] A list of paths to the features extracted from visual encoders."}
-    )
-    visual_feature_valid_paths: list = field(
-        default=[],
-        metadata={"help": "[Valid set] A list of paths to the features extracted from visual encoders."}
-    )
-    mae_path: str = field(
-        default=None,
-        metadata={"help": "The path to the MAE visual features."}
-    )
-    sign2vec_path: str = field(
-        default=None,
-        metadata={"help": "The path to the Sign2Vec visual features."}
-    )
-    dino_path: str = field(
-        default=None,
-        metadata={"help": "The path to the dino visual features."}
-    )
-    keypoint_path: str = field(
-        default=None,
-        metadata={"help": "The path to the keypoint features."}
-    )
-    annotation_train_path: str = field(
-        default=None,
-        metadata={"help": "[Train set] Path to the annotation file."}
-    )
-    annotation_valid_path: str = field(
-        default=None,
-        metadata={"help": "[Valid set] Path to the annotation file."}
-    )
-    context_window_size: int = field(
-        default=3,
-        metadata={"help": "The number of preceding sentences to put into the context."}
-    )
 
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
@@ -124,6 +66,7 @@ class TrainingArguments(transformers.TrainingArguments):
     remove_unused_columns: bool = field(default=False)
     freeze_mm_mlp_adapter: bool = field(default=False)
     mpt_attn_impl: Optional[str] = field(default="triton")
+    resume_from_checkpoint: bool = field(default=False)
     model_max_length: int = field(
         default=512,
         metadata={
@@ -151,6 +94,11 @@ class TrainingArguments(transformers.TrainingArguments):
     lora_bias: str = "none"
     mm_projector_lr: Optional[float] = None
     group_by_modality_length: bool = field(default=False)
+
+@dataclass
+class ExtraArguments:
+    yaml_args: str = field(default=None,
+                           metadata={"help": "Path to YAML config for overriding arguments."})
 
 
 def maybe_zero_3(param, ignore_status=False, name=None):
@@ -207,10 +155,10 @@ def get_mm_adapter_state_maybe_zero_3(named_params, keys_to_match):
     return to_return
 
 
-def find_all_linear_names(model):
+def find_all_linear_names(model, skip_modules):
     cls = torch.nn.Linear
     lora_module_names = set()
-    multimodal_keywords = ['mm_projector', 'vision_tower', 'vision_resampler']
+    multimodal_keywords = skip_modules
     for name, module in model.named_modules():
         if any(mm_keyword in name for mm_keyword in multimodal_keywords):
             continue
@@ -314,57 +262,12 @@ def _tokenize_fn(strings: Sequence[str],
     )
 
 
-def _mask_targets(target, tokenized_lens, speakers):
-    # cur_idx = 0
-    cur_idx = tokenized_lens[0]
-    tokenized_lens = tokenized_lens[1:]
-    target[:cur_idx] = IGNORE_INDEX
-    for tokenized_len, speaker in zip(tokenized_lens, speakers):
-        if speaker == "human":
-            target[cur_idx+2:cur_idx + tokenized_len] = IGNORE_INDEX
-        cur_idx += tokenized_len
-
-
-def _add_speaker_and_signal(header, source, get_conversation=True):
-    """Add speaker and start/end signal on each round."""
-    BEGIN_SIGNAL = "### "
-    END_SIGNAL = "\n"
-    conversation = header
-    for sentence in source:
-        from_str = sentence["from"]
-        if from_str.lower() == "human":
-            from_str = conversation_lib.default_conversation.roles[0]
-        elif from_str.lower() == "gpt":
-            from_str = conversation_lib.default_conversation.roles[1]
-        else:
-            from_str = 'unknown'
-        sentence["value"] = (BEGIN_SIGNAL + from_str + ": " +
-                             sentence["value"] + END_SIGNAL)
-        if get_conversation:
-            conversation += sentence["value"]
-    conversation += BEGIN_SIGNAL
-    return conversation
-
-
 def preprocess_multimodal(
-    sources: Sequence[str],
-    data_args: DataArguments
+    sources: Sequence[str]
 ) -> Dict:
-    is_multimodal = data_args.is_multimodal
-    if not is_multimodal:
-        return sources
-
     for source in sources:
         for sentence in source:
-            if DEFAULT_VIDEO_TOKEN in sentence['value']:
-                sentence['value'] = sentence['value'].replace(DEFAULT_VIDEO_TOKEN, '').strip()
-                sentence['value'] = DEFAULT_VIDEO_TOKEN + '\n' + sentence['value']
-                sentence['value'] = sentence['value'].strip()
-                if "mmtag" in conversation_lib.default_conversation.version:
-                    sentence['value'] = sentence['value'].replace(DEFAULT_VIDEO_TOKEN, '<Video>' + DEFAULT_VIDEO_TOKEN + '</Video>')
-            replace_token = DEFAULT_VIDEO_TOKEN
-            if data_args.mm_use_im_start_end:
-                replace_token = DEFAULT_VIDEO_START_TOKEN + replace_token + DEFAULT_VIDEO_END_TOKEN
+            replace_token = DEFAULT_VIDEO_START_TOKEN + DEFAULT_VIDEO_TOKEN + DEFAULT_VIDEO_END_TOKEN
             sentence["value"] = sentence["value"].replace(DEFAULT_VIDEO_TOKEN, replace_token)
     return sources
 
@@ -448,26 +351,20 @@ def preprocess_llama_2(
     )
 
 def preprocess_llama_3(
-    sources,
-    tokenizer: transformers.PreTrainedTokenizer,
-    has_video: bool = False
+    source,
+    tokenizer: transformers.PreTrainedTokenizer
 ) -> Dict:
     conv = conversation_lib.default_conversation.copy()
     roles = {"human": conv.roles[0], "gpt": conv.roles[1]}
 
     # Apply prompt templates
     conversations = []
-    for i, source in enumerate(sources):
-        if roles[source[0]["from"]] != conv.roles[0]:
-            # Skip the first one if it is not from human
-            source = source[1:]
-
-        conv.messages = []
-        for j, sentence in enumerate(source):
-            role = roles[sentence["from"]]
-            assert role == conv.roles[j % 2], f"{i}"
-            conv.append_message(role, sentence["value"])
-        conversations.append(conv.get_prompt())
+    conv.messages = []
+    for j, sentence in enumerate(source['conversations']):
+        role = roles[sentence["from"]]
+        assert role == conv.roles[j % 2], f"{i}"
+        conv.append_message(role, sentence["value"])
+    conversations.append(conv.get_prompt())
     # Tokenize conversations
     input_ids = torch.stack([tokenizer_video_token(prompt, tokenizer, return_tensors='pt') for prompt in conversations], dim=0)
     targets = input_ids.clone()
@@ -514,275 +411,86 @@ def preprocess_llama_3(
         labels=targets,
     )
 
-def preprocess(
-    sources: Sequence[str],
-    tokenizer: transformers.PreTrainedTokenizer,
-    has_video: bool = False
-) -> Dict:
-    """
-    Given a list of sources, each is a conversation list. This transform:
-    1. Add signal '### ' at the beginning each sentence, with end signal '\n';
-    2. Concatenate conversations together;
-    3. Tokenize the concatenated conversation;
-    4. Make a deepcopy as the target. Mask human words with IGNORE_INDEX.
-    """
-    if conversation_lib.default_conversation.sep_style == conversation_lib.SeparatorStyle.LLAMA_2:
-        return preprocess_llama_2(sources, tokenizer, has_video=has_video)
-    if conversation_lib.default_conversation.sep_style == conversation_lib.SeparatorStyle.LLAMA_3:
-        return preprocess_llama_3(sources, tokenizer, has_video=has_video)
-
-class LazySupervisedDataset(Dataset):
-    """Dataset for supervised fine-tuning."""
-
-    def __init__(self, data_path: str,
-                 tokenizer: transformers.PreTrainedTokenizer,
-                 data_args: DataArguments):
-        super(LazySupervisedDataset, self).__init__()
-        list_data_dict = json.load(open(data_path, "r"))
-        rank0_print("Formatting inputs...Skip in lazy mode")
-        self.tokenizer = tokenizer
-        self.list_data_dict = list_data_dict
-        self.data_args = data_args
-
-    def __len__(self):
-        return len(self.list_data_dict)
-
-    @property
-    def lengths(self):
-        length_list = []
-        for sample in self.list_data_dict:
-            img_tokens = 128 if 'image' in sample else 0
-            length_list.append(sum(len(conv['value'].split()) for conv in sample['conversations']) + img_tokens)
-        return length_list
-
-    @property
-    def modality_lengths(self):
-        length_list = []
-        for sample in self.list_data_dict:
-            cur_len = sum(len(conv['value'].split()) for conv in sample['conversations'])
-            cur_len = cur_len if 'image' in sample else -cur_len
-            length_list.append(cur_len)
-        return length_list
-
-    def __getitem__(self, i) -> Dict[str, torch.Tensor]:
-        sources = self.list_data_dict[i]
-        if isinstance(i, int):
-            sources = [sources]
-        assert len(sources) == 1, "Don't know why it is wrapped to a list"  # FIXME
-        if 'image' in sources[0]:
-            image_file = self.list_data_dict[i]['image']
-            image_folder = self.data_args.image_folder
-            processor = self.data_args.image_processor
-            image = Image.open(os.path.join(image_folder, image_file)).convert('RGB')
-            if self.data_args.image_aspect_ratio == 'pad':
-                def expand2square(pil_img, background_color):
-                    width, height = pil_img.size
-                    if width == height:
-                        return pil_img
-                    elif width > height:
-                        result = Image.new(pil_img.mode, (width, width), background_color)
-                        result.paste(pil_img, (0, (width - height) // 2))
-                        return result
-                    else:
-                        result = Image.new(pil_img.mode, (height, height), background_color)
-                        result.paste(pil_img, ((height - width) // 2, 0))
-                        return result
-                image = expand2square(image, tuple(int(x*255) for x in processor.image_mean))
-                image = processor.preprocess(image, return_tensors='pt')['pixel_values'][0]
-            else:
-                image = processor.preprocess(image, return_tensors='pt')['pixel_values'][0]
-            sources = preprocess_multimodal(
-                copy.deepcopy([e["conversations"] for e in sources]),
-                self.data_args)
-        else:
-            sources = copy.deepcopy([e["conversations"] for e in sources])
-        data_dict = preprocess(
-            sources,
-            self.tokenizer,
-            has_video=('image' in self.list_data_dict[i]))
-        if isinstance(i, int):
-            data_dict = dict(input_ids=data_dict["input_ids"][0],
-                             labels=data_dict["labels"][0])
-
-        # image exist in the data
-        if 'image' in self.list_data_dict[i]:
-            data_dict['image'] = image
-        elif self.data_args.is_multimodal:
-            # image does not exist in the data, but the model is multimodal
-            crop_size = self.data_args.image_processor.crop_size
-            data_dict['image'] = torch.zeros(3, crop_size['height'], crop_size['width'])
-        return data_dict
-
-def preprocess(
-    sources: Sequence[str],
-    tokenizer: transformers.PreTrainedTokenizer,
-    has_video: bool = False
-) -> Dict:
-    """
-    Given a list of sources, each is a conversation list. This transform:
-    1. Add signal '### ' at the beginning each sentence, with end signal '\n';
-    2. Concatenate conversations together;
-    3. Tokenize the concatenated conversation;
-    4. Make a deepcopy as the target. Mask human words with IGNORE_INDEX.
-    """
-
-    if conversation_lib.default_conversation.sep_style == conversation_lib.SeparatorStyle.PLAIN:
-        return preprocess_plain(sources, tokenizer)
-    if conversation_lib.default_conversation.sep_style == conversation_lib.SeparatorStyle.LLAMA_2:
-        return preprocess_llama_2(sources, tokenizer, has_video=has_video)
-    if conversation_lib.default_conversation.sep_style == conversation_lib.SeparatorStyle.LLAMA_3:
-        return preprocess_llama_3(sources, tokenizer, has_video=has_video)
-    if conversation_lib.default_conversation.version.startswith("v1"):
-        return preprocess_v1(sources, tokenizer, has_video=has_video)
-    if conversation_lib.default_conversation.version == "mpt":
-        return preprocess_mpt(sources, tokenizer, has_video=has_video)
-    # add end signal and concatenate together
-    conversations = []
-    for source in sources:
-        header = f"{conversation_lib.default_conversation.system}\n\n"
-        conversation = _add_speaker_and_signal(header, source)
-        conversations.append(conversation)
-    # tokenize conversations
-    def get_tokenize_len(prompts):
-        return [len(tokenizer_video_token(prompt, tokenizer)) for prompt in prompts]
-
-    if has_video:
-        input_ids = [tokenizer_video_token(prompt, tokenizer, return_tensors='pt') for prompt in conversations]
-    else:
-        conversations_tokenized = _tokenize_fn(conversations, tokenizer)
-        input_ids = conversations_tokenized["input_ids"]
-    targets = copy.deepcopy(input_ids)
-    for target, source in zip(targets, sources):
-        if has_video:
-            tokenized_lens = get_tokenize_len([header] + [s["value"] for s in source])
-        else:
-            tokenized_lens = _tokenize_fn([header] + [s["value"] for s in source], tokenizer)["input_ids_lens"]
-        speakers = [sentence["from"] for sentence in source]
-        _mask_targets(target, tokenized_lens, speakers)
-
-    return dict(input_ids=input_ids, labels=targets)
-
-class LazySupervisedS3DFeatureDataset(LazySupervisedDataset):
-    """Dataset for supervised fine-tuning on S3D features."""
-    def __init__(self, data_path: str,
-                 tokenizer: transformers.PreTrainedTokenizer,
-                 data_args: DataArguments):
-        super(LazySupervisedS3DFeatureDataset, self).__init__(data_path, tokenizer, data_args)
-        with open(self.data_args.s3d_path, 'rb') as f:
-            self.s3d = pickle.load(f)
-        super(LazySupervisedDataset, self).__init__()
-        list_data_dict = json.load(open(data_path, "r"))
-        rank0_print("Formatting inputs...Skip in lazy mode")
-        self.tokenizer = tokenizer
-        self.list_data_dict = list_data_dict
-        self.data_args = data_args
-
-    def __getitem__(self, i) -> Dict[str, torch.Tensor]:
-        sources = self.list_data_dict[i]
-        if isinstance(i, int):
-            sources = [sources]
-        assert len(sources) == 1, "Don't know why it is wrapped to a list"  # FIXME
-        # sources: json, 'image': 'train/06December_2011_Tuesday_tagesschau-6843'
-        if 'image' in sources[0]:
-            image_file = self.list_data_dict[i]['image']
-            image = self.s3d[image_file] # tensor(T//4, 832)
-            image_folder = self.data_args.image_folder
-            sources = preprocess_multimodal(
-                copy.deepcopy([e["conversations"] for e in sources]),
-                self.data_args)
-        else:
-            sources = copy.deepcopy([e["conversations"] for e in sources])
-        data_dict = preprocess(
-            sources,
-            self.tokenizer,
-            has_video=('image' in self.list_data_dict[i]))
-        if isinstance(i, int):
-            data_dict = dict(input_ids=data_dict["input_ids"][0],
-                             labels=data_dict["labels"][0])
-
-        # image exist in the data
-        if 'image' in self.list_data_dict[i]:
-            data_dict['image'] = image
-        elif self.data_args.is_multimodal:
-            # image does not exist in the data, but the model is multimodal
-            crop_size = self.data_args.image_processor.crop_size
-            data_dict['image'] = torch.zeros(3, crop_size['height'], crop_size['width'])
-        data_dict['s3d'] = True
-        return data_dict
-
-class LazySupervisedSignContextDataset(Dataset):
-    """Dataset for supervised training for visual features with context."""
+class SignContextDataset(Dataset):
+    """Dataset for supervised training for sign language translation with context."""
     def __init__(self, tokenizer: transformers.PreTrainedTokenizer,
-                 data_args: DataArguments,
+                 sign_data_args: dict,
                  split: str):
-        super(LazySupervisedSignContextDataset, self).__init__(tokenizer, data_args)
-        self.data_args = data_args
+        super(SignContextDataset, self).__init__()
+        self.sign_data_args = sign_data_args
         self.tokenizer = tokenizer
         self.split = split
+        data_dir = sign_data_args['data_dir']
         if self.split == "train":
-            annotation_path = data_args.annotation_train_path
-        elif self.split == "valid":
-            annotation_path = data_args.annotation_valid_path
+            annotation_path = sign_data_args['annotation_path']['train']
+        elif self.split == "dev":
+            annotation_path = sign_data_args['annotation_path']['dev']
+        annotation_path = os.path.join(data_dir, annotation_path)
         self.annotation = json.load(open(annotation_path, "r")) 
         # {{video_id: {clip_id: {"translation": ..., "paraphrases": [A, B, C] }}},
         # }
-        visual_features = []
-        if self.split == "train":
-            visual_feature_paths = data_args.visual_feature_train_paths
-        elif self.split == "valid":
-            visual_feature_paths = data_args.visual_feature_valid_paths
-        for vf in visual_feature_paths:
-            with gzip.open(vf, 'rb') as f:
-                visual_features.append(pickle.load(f))
-        self.visual_features = {}
-        for visual_feature in visual_features:
-            for video_id, clip_dict in visual_feature.items():
-                if video_id not in self.visual_features:
-                    self.visual_features[video_id] = defaultdict(list)
-                for clip_id, feature in clip_dict.items():
-                    self.visual_features[video_id][clip_id].append(feature)
-        self.num_visual_features = len(visual_features)
-        del visual_features
-        # self.visual_features: [ {video_id: {clip_id: R(NxV), clip_id:...}, ..., ...}, 
-        #   {video_id: ........}}}, 
-        #  ...]
+        # self.list_data: i -> (video_id, clip_id)
         self.list_data = [] # [(video_id, clip_id), ...]
-        for video_id, clip_dict in self.annoation.items():
+        for video_id, clip_dict in self.annotation.items():
             for clip_id in clip_dict:
-                self.list_data.append((video_id, clip_id))
-        self.prompt = "Given the preceding sentences as context, translate the American sign language video into English. "
-
-        # TODO
-
+                self.list_data.append((video_id, int(clip_id)))
+        for input_type in INPUT_TYPES:
+            enable_feature = sign_data_args['visual_features'][input_type]['enable_input']
+            vf_train_path = sign_data_args['visual_features'][input_type]['train']
+            vf_train_path = os.path.join(data_dir, vf_train_path)
+            vf_dev_path = sign_data_args['visual_features'][input_type]['dev']
+            vf_dev_path = os.path.join(data_dir, vf_dev_path)
+            if enable_feature and vf_train_path is not None and vf_dev_path is not None:
+                if self.split == "train":
+                    exec(f"self.{input_type} = h5py.File(vf_train_path, 'r')")
+                elif self.split == "dev":
+                    exec(f"self.{input_type} = h5py.File(vf_dev_path, 'r')")
+            else:
+                exec(f"self.{input_type}=None")
+        # self.sign2vec_train: {video_id: {clip_id: R(NxV), clip_id:...}, ..., ...}, 
+        #   {video_id: ........}}}
+        # self.sign2vec_dev: ...
+    def __len__(self):
+        return len(self.list_data)
 
     def __getitem__(self, i) -> Dict[str, torch.Tensor]:
         video_id, clip_id = self.list_data[i]
         # sources: json, 'image': 'train/06December_2011_Tuesday_tagesschau-6843'
-        trans_dict = self.annotation[video_id][clip_id]
-        translation = random.choice([trans_dict['paraphrases'].append(trans_dict['translation'])])
-        visual_feature_lst = self.visual_features[video_id][clip_id]
+        trans_dict = self.annotation[video_id][str(clip_id)]
+        translation = random.choice(trans_dict['paraphrases'] + [trans_dict['translation']])
+        # Get context: concatenate preceding sentences, 
+        # the number of sentences is defined by data_args.context_window_size
         context = []
-        for ci in range(max(clip_id-self.data_args.context_window_size, 0), clip_id):
-            context.append(self.annotation[video_id][ci]['translation'])
-
-        source = {}
-        source['id'] = "({0},{1})".format(str(video_id), str(clip_id))
-        source['conversations'] = [{'from': 'human', 
-                'value':'<video>'*self.num_visual_inputs+'\n'+self.prompt+' '.join(context)},
+        total_num_preceding_sents = clip_id
+        context_window_size = self.sign_data_args['context_window_size']
+        prelude_window_size = self.sign_data_args['prelude_window_size']
+        if total_num_preceding_sents >=  context_window_size + prelude_window_size:
+            preceding_ids = list(range(prelude_window_size)) + \
+                            list(range(clip_id-context_window_size, clip_id))
+        else:
+            preceding_ids = range(total_num_preceding_sents)
+        for ci in preceding_ids:    
+            context.append(self.annotation[video_id][str(ci)]['translation'])
+        # get the visual features
+        visual_features = {}
+        for input_type in INPUT_TYPES:
+            if eval(f"self.{input_type}") is not None:
+                vf = torch.tensor(numpy.array(eval(f"self.{input_type}")[video_id][str(clip_id)]))
+                visual_features[input_type] = vf
+        src = {}
+        src['id'] = "({0},{1})".format(str(video_id), str(clip_id))
+        video_token = DEFAULT_VIDEO_START_TOKEN + DEFAULT_VIDEO_TOKEN + DEFAULT_VIDEO_END_TOKEN
+        src['conversations'] = [{'from': 'human', 
+                'value':video_token+'\n'+PROMPT+' '.join(context)},
                 {'from': 'gpt',
                 'value':translation}]
-        sources = [source] # wrap into a list to match the original implementation
-        sources = preprocess_multimodal( # assign a token / tokens for <video>
-            copy.deepcopy([e['conversations'] for e in sources]),
-            self.data_args
-        )
-        data_dict = preprocess(
-            sources,
-            self.tokenizer,
-            has_video=True)
+        # <video> -> <video_start><video><video_end>
+        data_dict = preprocess_llama_3(src, self.tokenizer)
         data_dict = dict(input_ids=data_dict["input_ids"][0],
                          labels=data_dict["labels"][0])
-        data_dict['video'] = visual_feature_lst
+        data_dict['visual_features'] = visual_features
+        video_sep = DEFAULT_VIDEO_END_TOKEN+DEFAULT_VIDEO_START_TOKEN
+        data_dict['video_sep_ids'] = tokenizer_video_token(video_sep, self.tokenizer, return_tensors='pt')
         return data_dict
 
 @dataclass
@@ -792,8 +500,8 @@ class DataCollatorForSupervisedDataset(object):
     tokenizer: transformers.PreTrainedTokenizer
 
     def __call__(self, instances: Sequence[Dict]) -> Dict[str, torch.Tensor]:
-        input_ids, labels = tuple([instance[key] for instance in instances]
-                                  for key in ("input_ids", "labels"))
+        input_ids, labels, video_sep_ids, visual_features = tuple([instance[key] for instance in instances]
+                                  for key in ("input_ids", "labels", "video_sep_ids", "visual_features"))
         input_ids = torch.nn.utils.rnn.pad_sequence(
             input_ids,
             batch_first=True,
@@ -806,58 +514,66 @@ class DataCollatorForSupervisedDataset(object):
         batch = dict(
             input_ids=input_ids,
             labels=labels,
+            video_sep_ids=video_sep_ids,
+            visual_features=visual_features,
             attention_mask=input_ids.ne(self.tokenizer.pad_token_id),
         )
-
-        if 'image' in instances[0]:
-            images = [instance['image'] for instance in instances]
-            if all(x is not None and x.shape == images[0].shape for x in images):
-                batch['images'] = torch.stack(images)
-            else:
-                batch['images'] = images
-        if 's3d' in instances[0]:
-            batch['s3d'] = instances[0]['s3d']
         return batch
 
 
 def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer,
-                                data_args) -> Dict:
+                                sign_data_args,
+                                split) -> Dict:
     """Make dataset and collator for supervised fine-tuning."""
-    if data_args.image_folder:
-        train_dataset = LazySupervisedDataset(tokenizer=tokenizer,
-                                    data_path=data_args.data_path,
-                                    data_args=data_args)
-    elif data_args.s3d_path:
-        train_dataset = LazySupervisedS3DFeatureDataset(tokenizer=tokenizer,
-                                    data_path=data_args.data_path,
-                                    data_args=data_args)
+    train_dataset = SignContextDataset(
+        tokenizer=tokenizer,
+        sign_data_args = sign_data_args,
+        split = split
+    )
     data_collator = DataCollatorForSupervisedDataset(tokenizer=tokenizer)
     return dict(train_dataset=train_dataset,
                 eval_dataset=None,
                 data_collator=data_collator)
 
+def update_arguments(arg_obj, yaml_dict):
+    for k, v in yaml_dict.items():
+        setattr(arg_obj, k, v)
 
 def train(attn_implementation=None):
     global local_rank
 
     parser = transformers.HfArgumentParser(
-        (ModelArguments, DataArguments, TrainingArguments))
-    model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+        (ModelArguments, TrainingArguments, ExtraArguments))
+    model_args, training_args, extra_args = parser.parse_args_into_dataclasses()
+    with open(extra_args.yaml_args, 'r') as yaml_file:
+        yaml_config = yaml.safe_load(yaml_file)
+        update_arguments(model_args, yaml_config['ModelArguments'])
+        update_arguments(training_args, yaml_config['TrainingArguments'])
+    sign_data_args = yaml_config["SignDataArguments"]
+    sign_model_args = yaml_config["SignModelArguments"]
+    
     local_rank = training_args.local_rank
     compute_dtype = (torch.float16 if training_args.fp16 else (torch.bfloat16 if training_args.bf16 else torch.float32))
+
+    projector_lst = []
+    for input_type in sign_data_args['visual_features']:
+        if eval(f"sign_data_args['visual_features']['{input_type}']['enable_input']"):
+            projector_lst.append(f"{input_type}_projector")
+    skip_modules = projector_lst + ['lm_head']
 
     bnb_model_from_pretrained_args = {}
     if training_args.bits in [4, 8]:
         from transformers import BitsAndBytesConfig
         bnb_model_from_pretrained_args.update(dict(
-            device_map={"": training_args.device},
+            device_map="auto",
+            #device_map={"": training_args.device},
             # load_in_4bit=training_args.bits == 4,
             # load_in_8bit=training_args.bits == 8,
             quantization_config=BitsAndBytesConfig(
                 load_in_4bit=training_args.bits == 4,
                 load_in_8bit=training_args.bits == 8,
-                llm_int4_skip_modules=["mm_projector"],
-                llm_int8_skip_modules=["mm_projector"],
+                llm_int4_skip_modules=skip_modules,
+                llm_int8_skip_modules=skip_modules,
                 llm_int8_threshold=6.0,
                 llm_int8_has_fp16_weight=False, # must be false if --bf True
                 bnb_4bit_compute_dtype=compute_dtype,
@@ -865,32 +581,15 @@ def train(attn_implementation=None):
                 bnb_4bit_quant_type=training_args.quant_type # {'fp4', 'nf4'}
             )
         ))
-    if model_args.vision_tower is not None:
-        if 'mpt' in model_args.model_name_or_path:
-            config = transformers.AutoConfig.from_pretrained(model_args.model_name_or_path, trust_remote_code=True)
-            config.attn_config['attn_impl'] = training_args.mpt_attn_impl
-            model = LlavaMptForCausalLM.from_pretrained(
-                model_args.model_name_or_path,
-                config=config,
-                cache_dir=training_args.cache_dir,
-                **bnb_model_from_pretrained_args
-            )
-        else:
-            model = LlavaLlamaForCausalLM.from_pretrained(
+    model = SignLlavaLlamaForCausalLM.from_pretrained(
                 model_args.model_name_or_path,
                 cache_dir=training_args.cache_dir,
                 attn_implementation=attn_implementation,
                 torch_dtype=(torch.bfloat16 if training_args.bf16 else None),
+                sign_model_args=sign_model_args,
+                sign_data_args=sign_data_args,
                 **bnb_model_from_pretrained_args
             )
-    else:
-        model = transformers.LlamaForCausalLM.from_pretrained(
-            model_args.model_name_or_path,
-            cache_dir=training_args.cache_dir,
-            attn_implementation=attn_implementation,
-            torch_dtype=(torch.bfloat16 if training_args.bf16 else None),
-            **bnb_model_from_pretrained_args
-        )
     model.config.use_cache = False
 
     if model_args.freeze_backbone:
@@ -914,7 +613,7 @@ def train(attn_implementation=None):
         lora_config = LoraConfig(
             r=training_args.lora_r,
             lora_alpha=training_args.lora_alpha,
-            target_modules=find_all_linear_names(model),
+            target_modules=find_all_linear_names(model, skip_modules),
             lora_dropout=training_args.lora_dropout,
             bias=training_args.lora_bias,
             task_type="CAUSAL_LM",
@@ -927,73 +626,45 @@ def train(attn_implementation=None):
         rank0_print("Adding LoRA adapters...")
         model = get_peft_model(model, lora_config)
 
-    if 'mpt' in model_args.model_name_or_path:
-        tokenizer = transformers.AutoTokenizer.from_pretrained(
-            model_args.model_name_or_path,
-            cache_dir=training_args.cache_dir,
-            model_max_length=training_args.model_max_length,
-            padding_side="right"
-        )
-    else:
-        tokenizer = transformers.AutoTokenizer.from_pretrained(
-            model_args.model_name_or_path,
-            cache_dir=training_args.cache_dir,
-            model_max_length=training_args.model_max_length,
-            padding_side="right",
-            use_fast=False,
-        )
-
-    if model_args.version == "v0":
-        if tokenizer.pad_token is None:
-            smart_tokenizer_and_embedding_resize(
-                special_tokens_dict=dict(pad_token="[PAD]"),
-                tokenizer=tokenizer,
-                model=model,
-            )
-    elif model_args.version == "v0.5":
-        tokenizer.pad_token = tokenizer.unk_token
-    else:
-        if tokenizer.unk_token is None:
-            tokenizer.add_special_tokens({"unk_token":"<unk>"})
-        tokenizer.pad_token = tokenizer.unk_token
-        if model_args.version in conversation_lib.conv_templates:
-            conversation_lib.default_conversation = conversation_lib.conv_templates[model_args.version]
-        else:
-            conversation_lib.default_conversation = conversation_lib.conv_templates["vicuna_v1"]
-
-    model.get_model().initialize_vision_modules(
-        model_args=model_args,
-        fsdp=training_args.fsdp
+    tokenizer = transformers.AutoTokenizer.from_pretrained(
+        model_args.model_name_or_path,
+        cache_dir=training_args.cache_dir,
+        model_max_length=training_args.model_max_length,
+        padding_side="right",
+        use_fast=False,
     )
-    
-    vision_tower = model.get_vision_tower()
-    vision_tower.to(dtype=torch.bfloat16 if training_args.bf16 else torch.float16, device=training_args.device)
 
-    data_args.image_processor = vision_tower.image_processor
-    data_args.is_multimodal = True
-
-    model.config.image_aspect_ratio = data_args.image_aspect_ratio
+    if tokenizer.unk_token is None:
+        tokenizer.add_special_tokens({"unk_token":"<unk>"})
+    tokenizer.pad_token = tokenizer.unk_token
+    conversation_lib.default_conversation = conversation_lib.conv_templates[model_args.version]
+            
     model.config.tokenizer_padding_side = tokenizer.padding_side
     model.config.tokenizer_model_max_length = tokenizer.model_max_length
 
     model.config.tune_mm_mlp_adapter = training_args.tune_mm_mlp_adapter = model_args.tune_mm_mlp_adapter
     if model_args.tune_mm_mlp_adapter:
         model.requires_grad_(False)
-        for p in model.get_model().mm_projector.parameters():
-            p.requires_grad = True
+        for input_type in INPUT_TYPES:
+            projector = eval(f"model.get_model().{input_type}_projector")
+            if projector is not None:
+                for p in projector.parameters():
+                    p.requires_grad = True
 
     model.config.freeze_mm_mlp_adapter = training_args.freeze_mm_mlp_adapter
     if training_args.freeze_mm_mlp_adapter:
-        for p in model.get_model().mm_projector.parameters():
-            p.requires_grad = False
+        projector = eval(f"model.get_model().{input_type}_projector")
+        if projector is not None:
+            for p in projector.parameters():
+                p.requires_grad = False
 
     if training_args.bits in [4, 8]:
-        model.get_model().mm_projector.to(dtype=compute_dtype, device=training_args.device)
+        for input_type in INPUT_TYPES:
+            projector = eval(f"model.get_model().{input_type}_projector")
+            if projector is not None:
+                projector.to(dtype=compute_dtype, device=training_args.device)
 
-    model.config.mm_use_im_start_end = data_args.mm_use_im_start_end = model_args.mm_use_im_start_end
     model.config.mm_projector_lr = training_args.mm_projector_lr
-    training_args.use_im_start_end = model_args.mm_use_im_start_end
-    model.config.mm_use_im_patch_token = model_args.mm_use_im_patch_token
     model.initialize_vision_tokenizer(model_args, tokenizer=tokenizer)
 
     if training_args.bits in [4, 8]:
@@ -1010,13 +681,14 @@ def train(attn_implementation=None):
                         module = module.to(torch.bfloat16)
 
     data_module = make_supervised_data_module(tokenizer=tokenizer,
-                                              data_args=data_args)
+                                              sign_data_args=sign_data_args,
+                                              split="train")
     trainer = LLaVATrainer(model=model,
                     tokenizer=tokenizer,
                     args=training_args,
                     **data_module)
 
-    if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
+    if training_args.resume_from_checkpoint and list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
         trainer.train(resume_from_checkpoint=True)
     else:
         trainer.train()

@@ -1,4 +1,4 @@
-# Sign Llvava
+# Sign LLaVA
 ![Sing Llava](https://github.com/JSALT2024/Sign_LLaVA/blob/main/images/Sign_LLaVA_with_context_transparent.png)
 
 

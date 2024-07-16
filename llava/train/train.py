@@ -411,6 +411,8 @@ def preprocess_llama_3(
         labels=targets,
     )
 
+
+
 class SignContextDataset(Dataset):
     """Dataset for supervised training for sign language translation with context."""
     def __init__(self, tokenizer: transformers.PreTrainedTokenizer,
@@ -421,6 +423,7 @@ class SignContextDataset(Dataset):
         self.tokenizer = tokenizer
         self.split = split
         data_dir = sign_data_args['data_dir']
+
         if self.split == "train":
             annotation_path = sign_data_args['annotation_path']['train']
         elif self.split == "dev":
@@ -431,9 +434,19 @@ class SignContextDataset(Dataset):
         # }
         # self.list_data: i -> (video_id, clip_id)
         self.list_data = [] # [(video_id, clip_id), ...]
+
+        self.h5shard = defaultdict(lambda: defaultdict(dict))
+        self.clip_order_to_int = {}
+        self.clip_order_from_int = {}
+        for video_id in self.annotation.keys():
+            co = self.annotation[video_id]['clip_order']
+            self.clip_order_from_int[video_id] =  dict(zip(range(len(co)),co))
+            self.clip_order_to_int[video_id] =  dict(zip(co,range(len(co))))
+
         for video_id, clip_dict in self.annotation.items():
-            for clip_id in clip_dict:
-                self.list_data.append((video_id, int(clip_id)))
+            for clip_name in clip_dict:
+                if clip_name != "clip_order":
+                    self.list_data.append((video_id, self.clip_order_to_int[video_id][clip_name]))
         for input_type in INPUT_TYPES:
             enable_feature = sign_data_args['visual_features'][input_type]['enable_input']
             vf_train_path = sign_data_args['visual_features'][input_type]['train']
@@ -442,9 +455,11 @@ class SignContextDataset(Dataset):
             vf_dev_path = os.path.join(data_dir, vf_dev_path)
             if enable_feature and vf_train_path is not None and vf_dev_path is not None:
                 if self.split == "train":
-                    exec(f"self.{input_type} = h5py.File(vf_train_path, 'r')")
+                    h5_video_clip = self.read_multih5_json(data_dir, vf_train_path, input_type)
+                    self.remove_missing_annotation(h5_video_clip)
                 elif self.split == "dev":
-                    exec(f"self.{input_type} = h5py.File(vf_dev_path, 'r')")
+                    h5_video_clip = self.read_multih5_json(data_dir, vf_dev_path, input_type)
+                    self.remove_missing_annotation(h5_video_clip)
             else:
                 exec(f"self.{input_type}=None")
         # self.sign2vec_train: {video_id: {clip_id: R(NxV), clip_id:...}, ..., ...}, 
@@ -456,8 +471,10 @@ class SignContextDataset(Dataset):
     def __getitem__(self, i) -> Dict[str, torch.Tensor]:
         video_id, clip_id = self.list_data[i]
         # sources: json, 'image': 'train/06December_2011_Tuesday_tagesschau-6843'
-        trans_dict = self.annotation[video_id][str(clip_id)]
+        clip_name = self.clip_order_from_int[video_id][clip_id]
+        trans_dict = self.annotation[video_id][self.clip_order_from_int[video_id][clip_id]]
         translation = random.choice(trans_dict['paraphrases'] + [trans_dict['translation']])
+    
         # Get context: concatenate preceding sentences, 
         # the number of sentences is defined by data_args.context_window_size
         context = []
@@ -470,12 +487,14 @@ class SignContextDataset(Dataset):
         else:
             preceding_ids = range(total_num_preceding_sents)
         for ci in preceding_ids:    
-            context.append(self.annotation[video_id][str(ci)]['translation'])
+            preceding_clip_name = self.clip_order_from_int[video_id][ci]
+            context.append(self.annotation[video_id][preceding_clip_name]['translation'])
         # get the visual features
         visual_features = {}
         for input_type in INPUT_TYPES:
             if eval(f"self.{input_type}") is not None:
-                vf = torch.tensor(numpy.array(eval(f"self.{input_type}")[video_id][str(clip_id)]))
+                shard = self.h5shard[self.split][input_type][video_id]
+                vf = torch.tensor(numpy.array(eval(f"self.{input_type}")[shard][video_id][clip_name]))
                 visual_features[input_type] = vf
         src = {}
         src['id'] = "({0},{1})".format(str(video_id), str(clip_id))
@@ -492,6 +511,30 @@ class SignContextDataset(Dataset):
         video_sep = DEFAULT_VIDEO_END_TOKEN+DEFAULT_VIDEO_START_TOKEN
         data_dict['video_sep_ids'] = tokenizer_video_token(video_sep, self.tokenizer, return_tensors='pt')
         return data_dict
+
+    def read_multih5_json(self, data_dir, json_filename, input_type):
+        """Helper function for reading json specifications of multiple H5 files for visual features"""
+        h5_video_clip = set()
+        with open(os.path.join(data_dir, json_filename), 'r') as F:
+            self.h5shard[self.split][input_type] = json.load(F)
+            exec(f"self.{input_type} = dict()")
+            for k in set(self.h5shard[self.split][input_type].values()):
+                h5file = os.path.join(data_dir, json_filename.replace('metadata_','').replace('.json',".%s.h5"%k))
+                print(h5file,k,json_filename,data_dir)
+                exec(f"self.{input_type}[k] = h5py.File(h5file, 'r')")
+
+            for vi in eval(f"self.{input_type}[k]").keys():
+                for ci in eval(f"self.{input_type}[k][vi]").keys():
+                    clip_id = self.clip_order_to_int[vi][ci]
+                    h5_video_clip.add((vi, clip_id))
+        return h5_video_clip
+    
+
+    def remove_missing_annotation(self, h5_video_clip):
+        annotations_to_delete = set(self.list_data) - h5_video_clip
+        for a in annotations_to_delete:
+            self.list_data.remove(a)
+ 
 
 @dataclass
 class DataCollatorForSupervisedDataset(object):

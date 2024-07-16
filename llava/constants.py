@@ -15,6 +15,6 @@ IMAGE_PLACEHOLDER = "<image-placeholder>"
 DEFAULT_VIDEO_TOKEN = "<video>"
 DEFAULT_VIDEO_START_TOKEN = "<video_start>"
 DEFAULT_VIDEO_END_TOKEN = "<video_end>"
-INPUT_TYPES = ["mae", "sign2vec", "dino", "keypoint"]
+INPUT_TYPES = ["mae", "sign2vec", "dino", "pose"]
 VIDEO_TOKEN_INDEX = -200
 PROMPT = "Given the preceding sentences as context, translate the American sign language video into English. "

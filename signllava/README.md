@@ -60,7 +60,10 @@ mock_data_multi/
                 "clip_order": [${clip_name}, ..., ],
                 ${clip_name}: {
                                 "translation": ....,
-                                "paraphrases": [A, B, C, ...]},
+                                "paraphrases": [A, B, C, ...],
+                                "keywords": ["a", "b", ...]
+                              },
+      
                 ${clip_name}: ....,
                 },
     ${video_id}: ...

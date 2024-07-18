@@ -31,6 +31,7 @@ from typing import Dict, Optional, Sequence, List
 import torch
 
 import transformers
+from transformers import set_seed
 from transformers import EarlyStoppingCallback
 import tokenizers
 
@@ -468,6 +469,15 @@ def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer,
 def update_arguments(arg_obj, yaml_dict):
     for k, v in yaml_dict.items():
         setattr(arg_obj, k, v)
+    
+def set_same_seed(seed):
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    numpy.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+    set_seed(seed)
 
 def train(attn_implementation=None):
     global local_rank
@@ -481,6 +491,9 @@ def train(attn_implementation=None):
         update_arguments(training_args, yaml_config['TrainingArguments'])
     sign_data_args = yaml_config["SignDataArguments"]
     sign_model_args = yaml_config["SignModelArguments"]
+
+    # set seed
+    set_same_seed(training_args.seed)
     
     local_rank = training_args.local_rank
     compute_dtype = (torch.float16 if training_args.fp16 else (torch.bfloat16 if training_args.bf16 else torch.float32))

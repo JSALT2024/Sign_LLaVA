@@ -37,6 +37,8 @@ TrainingArguments:
   lora_weight_path: ""
   lora_bias: "none"
   group_by_modality_length: False
+  seed: 42
+  data_seed: 42
 SignDataArguments:
   context_window_size: 0 #number of preceding sentences
   prelude_window_size: 0 #number of sentences at the beginning of the discourse 

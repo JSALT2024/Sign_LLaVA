@@ -1,6 +1,6 @@
 #!/bin/bash
 module load cuda/12.1
-cd /home/kduh/src/signlang/Sign_LLaVA
+cd /export/fs06/xzhan138/Sign_LLaVA
 
 CUDA_ID=$CUDA_VISIBLE_DEVICES
 source scripts/get_gpu_ids.sh

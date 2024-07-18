@@ -24,12 +24,22 @@ from llava.mm_utils import (
 from PIL import Image
 
 import requests
-from PIL import Image
 from io import BytesIO
 import re
 
+def set_same_seed(seed):
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    numpy.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+    set_seed(seed)
 
-def eval_model(args):
+def eval_model(config_yaml):
+    with open(config_yaml, 'r') as yaml_file:
+        yaml_config = yaml.safe_load(yaml_file)
+    config = yaml.safe_load(yaml_config)
     # Model
     disable_torch_init()
 

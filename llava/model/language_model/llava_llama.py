@@ -104,6 +104,7 @@ class SignLlavaLlamaForCausalLM(LlamaForCausalLM, SignLlavaForCausalLM):
         self,
         inputs: Optional[torch.Tensor] = None,
         visual_features: list = [],
+        video_sep_ids: torch.LongTensor = None,
         **kwargs,
     ) -> Union[GenerateOutput, torch.LongTensor]:
         position_ids = kwargs.pop("position_ids", None)
@@ -121,6 +122,7 @@ class SignLlavaLlamaForCausalLM(LlamaForCausalLM, SignLlavaForCausalLM):
             attention_mask,
             past_key_values,
             labels,
+            video_sep_ids,
             visual_features
         )
         return super().generate(

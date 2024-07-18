@@ -383,9 +383,13 @@ class SignContextDataset(Dataset):
         src['id'] = "({0},{1})".format(str(video_id), str(clip_id))
         video_token = DEFAULT_VIDEO_START_TOKEN + DEFAULT_VIDEO_TOKEN + DEFAULT_VIDEO_END_TOKEN
         src['conversations'] = [{'from': 'human', 
-                'value':video_token+'\n'+PROMPT+' '.join(context)},
+                'value':video_token+'\n'+PROMPT.replace('<context>', ' '.join(context))},
                 {'from': 'gpt',
                 'value':translation}]
+        print('clip_id:', clip_id, clip_name)
+        print('context: ',len(context), context)
+        print('translation: ', translation)
+        print('prompt: ',src['conversations'],'\n')
         # <video> -> <video_start><video><video_end>
         data_dict = preprocess_llama_3(src, self.tokenizer)
         data_dict = dict(input_ids=data_dict["input_ids"][0],

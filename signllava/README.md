@@ -53,10 +53,11 @@ Multiple input files for each visual representation.
 Find the location where the `transformers` package is installed in your `llava` environment. For example, for me, it is `/home/xzhan138/anaconda3/envs/llava/lib/python3.10/site-packages/transformers/`.
 
 **Please make two modifications for proper checkpoint saving and loading:** 
-1. In `${transformers_path}/trainer.py`, line *2491*, add `exclude_frozen_parameters=True`.
+1. In `${transformers_path}/trainer.py`, around line *2490*, add `exclude_frozen_parameters=True`.
     ```
     self.model_wrapper.save_checkpoint(output_dir, exclude_frozen_parameters=True)
     ```
+    ![trainer.py](images/save_ckpt.png)
     This enables saving only the parameters that are updated during training instead of all the parameters for each checkpoint. 
     During **pretraining**, we only need to save the `projector` weights, otherwise the checkpoint gets huge with the pretrained model.
 2. In `${transformers_path}/integrations/deepspeed.py`, line *403*, add `load_module_strict=False`.
@@ -65,6 +66,7 @@ Find the location where the `transformers` package is installed in your `llava` 
     checkpoint_path, load_optimizer_states=True, load_lr_scheduler_states=True, load_module_strict=False
     )
     ```
+    ![deepspeed.py](images/load_ckpt.png)
     This enables loading a model `state_dict` that contains only part of the parameters of the model. 
     During **pretraining**, when resuming training from a checkpoint, this allows to load only the `projector` weights.
 # Pretraining

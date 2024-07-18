@@ -1,6 +1,7 @@
 import os
 import torch
 import torch.nn as nn
+import numpy as np
 
 from torch.utils.data import Sampler
 
@@ -13,6 +14,7 @@ from transformers.trainer import (
     logger,
 )
 from typing import List, Optional
+from ..constants import *
 
 
 def maybe_zero_3(param, ignore_status=False, name=None):
@@ -228,26 +230,56 @@ class LLaVATrainer(Trainer):
         return self.optimizer
 
     def _save_checkpoint(self, model, trial, metrics=None):
+        # In all cases, including ddp/dp/deepspeed, self.model is always a reference to the model we
+        # want to save except FullyShardedDDP.
+        # assert unwrap_model(model) is self.model, "internal model should be a reference to self.model"
         if getattr(self.args, 'tune_mm_mlp_adapter', False):
             from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
             checkpoint_folder = f"{PREFIX_CHECKPOINT_DIR}-{self.state.global_step}"
 
+            if self.hp_search_backend is None and trial is None:
+                self.store_flos()
+
             run_dir = self._get_output_dir(trial=trial)
             output_dir = os.path.join(run_dir, checkpoint_folder)
+            ## OLD
+            #self.save_model(output_dir, _internal_call=True)
+            # Save optimizer and scheduler
+            self._save_optimizer_and_scheduler(output_dir)
+            # Save RNG state
+            self._save_rng_state(output_dir)
 
-            # Only save Adapter
-            keys_to_match = ['mm_projector', 'vision_resampler']
-            if getattr(self.args, "use_im_start_end", False):
-                keys_to_match.extend(['embed_tokens', 'embed_in'])
+            # Determine the new best metric / best model checkpoint
+            if metrics is not None and self.args.metric_for_best_model is not None:
+                metric_to_check = self.args.metric_for_best_model
+                if not metric_to_check.startswith("eval_"):
+                    metric_to_check = f"eval_{metric_to_check}"
+                try:
+                    metric_value = metrics[metric_to_check]
+                except KeyError as exc:
+                    raise KeyError(
+                        f"The `metric_for_best_model` training argument is set to '{metric_to_check}', which is not found in the evaluation metrics. "
+                        f"The available evaluation metrics are: {list(metrics.keys())}. Consider changing the `metric_for_best_model` via the TrainingArguments."
+                    ) from exc
 
-            weight_to_save = get_mm_adapter_state_maybe_zero_3(self.model.named_parameters(), keys_to_match)
+                operator = np.greater if self.args.greater_is_better else np.less
+                if (
+                    self.state.best_metric is None
+                    or self.state.best_model_checkpoint is None
+                    or operator(metric_value, self.state.best_metric)
+                ):
+                    self.state.best_metric = metric_value
+                    self.state.best_model_checkpoint = output_dir
+            # Update the `TrainerControl` state to where we are currently
+            #self.state.stateful_callbacks["TrainerControl"] = self.control.state()
+            self.state.save_to_json(os.path.join(output_dir, TRAINER_STATE_NAME))
 
-            if self.args.local_rank == 0 or self.args.local_rank == -1:
-                self.model.config.save_pretrained(output_dir)
-                torch.save(weight_to_save, os.path.join(output_dir, f'mm_projector.bin'))
+            # Solely rely on numerical checkpoint id for rotation.
+            # mtime is not reliable especially on some fuse fs in cloud environments.
+            self._rotate_checkpoints(use_mtime=False, output_dir=run_dir)
         else:
             super(LLaVATrainer, self)._save_checkpoint(model, trial, metrics)
-
+    
     def _save(self, output_dir: Optional[str] = None, state_dict=None):
         if getattr(self.args, 'tune_mm_mlp_adapter', False):
             pass

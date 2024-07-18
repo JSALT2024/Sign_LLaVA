@@ -45,22 +45,25 @@ class SignLlavaProjector: # adapted from LlavaMetaModel
 
     def initialize_projectors(self): # adapted from initialize_vision_modules, it seems it is never called! 
         projector_configs = self.sign_model_args['projectors']
+        projector_names = []
         for input_type in INPUT_TYPES:
             projector_name = "{}_projector".format(input_type)
             projector_args = projector_configs[input_type]
             if eval(f"self.{projector_name}") is not None:
+                projector_names.append(projector_name)
                 # In case it is frozen by LoRA
                 for p in eval(f"self.{projector_name}.parameters()"):
                     p.requires_grad = True
 
-                # load weights from a pretrained checkpoint
-                pretrained_ckpt = projector_args["pretrained_projector_ckpt"]  
-                if pretrained_ckpt is not None:
-                    projector_weights = torch.load(pretrained_ckpt, map_location='cpu')
-                    def get_w(weights, keyword):
-                        return {k.split(keyword + '.')[1]: v for k, v in weights.items() if keyword in k}
-                    eval(f"self.{projector_name}").load_state_dict(get_w(projector_weights, f'{projector_name}'))
-                    print(f"Loaded the pretrained weights for {projector_name} from {pretrained_ckpt}.")
+        # load weights from a pretrained checkpoint
+        pretrained_ckpt = projector_args["pretrained_projector_ckpt"]  
+        if pretrained_ckpt is not None:
+            projector_weights = torch.load(pretrained_ckpt, map_location='cpu')
+            def get_w(weights, keyword):
+                return {k.split(keyword + '.')[1]: v for k, v in weights.items() if keyword in k}
+            for projector_name in projector_names:
+                eval(f"self.{projector_name}").load_state_dict(get_w(projector_weights, f'{projector_name}'))
+                print(f"Loaded the pretrained weights for {projector_name} from {pretrained_ckpt}.")
 
 class SignLlavaForCausalLM(ABC): # adapted from LlavaMetaForCausalLM(ABC)
     @abstractmethod
@@ -199,9 +202,8 @@ class SignLlavaForCausalLM(ABC): # adapted from LlavaMetaForCausalLM(ABC)
                     position_ids[i, :cur_len] = torch.arange(0, cur_len, dtype=position_ids.dtype, device=position_ids.device)
 
         new_input_embeds = torch.stack(new_input_embeds_padded, dim=0)
-        new_labels = torch.stack(new_labels, dim=0)
 
-        return None, position_ids, attention_mask, past_key_values, new_input_embeds, new_labels
+        return None, position_ids, attention_mask, past_key_values, new_input_embeds, new_labels_padded
 
     def initialize_vision_tokenizer(self, model_args, tokenizer):
         num_new_tokens = tokenizer.add_tokens([DEFAULT_VIDEO_START_TOKEN, DEFAULT_VIDEO_END_TOKEN], special_tokens=True)

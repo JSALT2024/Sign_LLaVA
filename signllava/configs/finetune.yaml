@@ -9,7 +9,7 @@ TrainingArguments:
   #per_device_train_batch_size: 1
   #per_device_eval_batch_size: 1
   auto_find_batch_size: True
-  resume_from_checkpoint: True
+  resume_from_checkpoint: False
   do_train: True
   do_eval: True
   evaluation_strategy: steps

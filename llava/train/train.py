@@ -481,6 +481,7 @@ def set_same_seed(seed):
 
 def train(attn_implementation=None):
     global local_rank
+    global PROMPT
 
     parser = transformers.HfArgumentParser(
         (ModelArguments, TrainingArguments, ExtraArguments))
@@ -494,6 +495,12 @@ def train(attn_implementation=None):
 
     # set seed
     set_same_seed(training_args.seed)
+
+    # set prompt
+    if sign_data_args["context_window_size"] + sign_data_args["prelude_window_size"] == 0:
+        PROMPT = PROMPT_NO_CONTEXT
+    else:
+        PROMPT = PROMPT_CONTEXT
     
     local_rank = training_args.local_rank
     compute_dtype = (torch.float16 if training_args.fp16 else (torch.bfloat16 if training_args.bf16 else torch.float32))

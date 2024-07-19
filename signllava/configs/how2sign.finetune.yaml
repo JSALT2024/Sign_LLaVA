@@ -1,9 +1,9 @@
 ModelArguments:
   model_name_or_path: meta-llama/Meta-Llama-3-8B-Instruct #meta-llama/Meta-Llama-3-70B-Instruct #
   version: llava_sign_llama_3
-  tune_mm_mlp_adapter: True 
+  tune_mm_mlp_adapter: True
 TrainingArguments:
-  output_dir: signllava/checkpoints/llama3_8b_pre_test
+  output_dir: signllava/checkpoints/how2sign_llama3_8b_nocontext_pose_finetune
   model_max_length: 2048
   bf16: True
   #per_device_train_batch_size: 1
@@ -14,23 +14,23 @@ TrainingArguments:
   do_eval: True
   evaluation_strategy: steps
   save_strategy: steps
-  eval_steps: 10
-  save_steps: 10
-  logging_steps: 10
+  eval_steps: 200
+  save_steps: 200
+  logging_steps: 200
+  num_train_epochs: 10
   metric_for_best_model: eval_loss
   load_best_model_at_end: True
   save_total_limit: 1
   weight_decay: 0.1
   warmup_ratio: 0.03
-  dataloader_num_workers: 2
-  num_train_epochs: 10
+  dataloader_num_workers: 4
   learning_rate: 0.002
   lr_scheduler_type: cosine
   gradient_checkpointing: True
   double_quant: True # Compress the quantization statistics through double quantization.
   quant_type: nf4
-  bits: 16 # 4, 8 to enable quantization
-  lora_enable: False
+  bits: 4 # 4, 8 to enable quantization
+  lora_enable: True
   lora_r: 64
   lora_alpha: 16
   lora_dropout: 0.05
@@ -42,7 +42,7 @@ TrainingArguments:
 SignDataArguments:
   context_window_size: 0 #number of preceding sentences
   prelude_window_size: 0 #number of sentences at the beginning of the discourse 
-  data_dir: /export/fs06/xzhan138/Sign_LLaVA/mock_data_multi/
+  data_dir: /export/fs06/xzhan138/Sign_LLaVA/signllava/data/How2Sign
   annotation_path:
     train: annotation.train.json
     dev: annotation.dev.json
@@ -65,6 +65,7 @@ SignDataArguments:
       dev: pose/metadata_pose.dev.json
 SignModelArguments:
   projectors:
+    pretrained_projector_ckpt: signllava/checkpoints/how2sign_llama3_8b_nocontext_pose_pretrain/checkpoint-300/global_step300/mp_rank_00_model_states.pt
     sign2vec: 
       dim: 768
       projector_type: mlp2x_gelu
@@ -75,5 +76,5 @@ SignModelArguments:
       dim: 384
       projector_type: mlp2x_gelu
     pose: 
-      dim: 32
+      dim: 224
       projector_type: mlp2x_gelu

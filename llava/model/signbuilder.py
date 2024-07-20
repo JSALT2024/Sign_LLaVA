@@ -54,6 +54,10 @@ def load_pretrained_model(config, use_flash_attn=False, device_map="auto", devic
         from llava.model.language_model.llava_llama import LlavaConfig
         lora_cfg_pretrained = LlavaConfig.from_pretrained(model_path)
         tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False)
+        if tokenizer.unk_token is None:
+            tokenizer.add_special_tokens({"unk_token":"<unk>"})
+        tokenizer.pad_token = tokenizer.unk_token
+        tokenizer.padding_side = "right"
         print('Loading LLaVA from base model...')
         model = SignLlavaLlamaForCausalLM.from_pretrained(
                 model_base,
@@ -89,6 +93,10 @@ def load_pretrained_model(config, use_flash_attn=False, device_map="auto", devic
         # this may be mm projector only
         print('Loading LLaVA from base model...')
         tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False)
+        if tokenizer.unk_token is None:
+            tokenizer.add_special_tokens({"unk_token":"<unk>"})
+        tokenizer.pad_token = tokenizer.unk_token
+        tokenizer.padding_side = "right"
         cfg_pretrained = AutoConfig.from_pretrained(model_path)
         model = SignLlavaLlamaForCausalLM.from_pretrained(
                 model_base,
@@ -97,7 +105,7 @@ def load_pretrained_model(config, use_flash_attn=False, device_map="auto", devic
                 sign_model_args=config['SignModelArguments'],
                 sign_data_args=config['SignDataArguments'],
                 **kwargs)
-        tokenizer.add_tokens([DEFAULT_VIDEO_TOKEN, DEFAULT_VIDEO_START_TOKEN, DEFAULT_VIDEO_END_TOKEN], special_tokens=True)
+        tokenizer.add_tokens([DEFAULT_VIDEO_START_TOKEN, DEFAULT_VIDEO_END_TOKEN], special_tokens=True)
         model.resize_token_embeddings(len(tokenizer))
         model_state_path = glob.glob(os.path.join(model_path, "checkpoint*/global_step*/*model_states.pt"))[0]
         mm_projector_weights = torch.load(model_state_path, map_location='cpu')['module']

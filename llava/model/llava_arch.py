@@ -95,6 +95,9 @@ class SignLlavaForCausalLM(ABC): # adapted from LlavaMetaForCausalLM(ABC)
                 projected_vf_dict[key] = eval(f"self.get_model().{key}_projector(visual_feature)")
             projected_visual_features.append(projected_vf_dict)
         del visual_features
+        _labels = labels
+        _position_ids = position_ids
+        _attention_mask = attention_mask
         # Initialize attention_mask, position_ids, labels
         if attention_mask is None:
             attention_mask = torch.ones_like(input_ids, dtype=torch.bool)
@@ -207,6 +210,18 @@ class SignLlavaForCausalLM(ABC): # adapted from LlavaMetaForCausalLM(ABC)
 
         new_input_embeds = torch.stack(new_input_embeds_padded, dim=0)
 
+        if _labels is None:
+            new_labels = None
+        else:
+            new_labels = new_labels_padded
+
+        if _attention_mask is None:
+            attention_mask = None
+        else:
+            attention_mask = attention_mask.to(dtype=_attention_mask.dtype)
+
+        if _position_ids is None:
+            position_ids = None
         return None, position_ids, attention_mask, past_key_values, new_input_embeds, new_labels_padded
 
     def initialize_vision_tokenizer(self, model_args, tokenizer):

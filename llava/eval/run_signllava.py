@@ -10,6 +10,7 @@ import yaml
 import random
 import numpy
 from collections import defaultdict
+import tqdm
 
 import transformers
 from transformers import set_seed
@@ -273,9 +274,10 @@ def eval_model(config_yaml):
         dtype=dtype
     )
     
-    predictions = {}
+    predictions = defaultdict(dict)
     with torch.inference_mode():
-        for i in range(len(test_dataset)):
+        for i in tqdm.tqdm(range(10)):
+        #for i in tqdm.tqdm(range(len(test_dataset))):
             data_dict = test_dataset[i]
             input_ids = data_dict['input_ids']
             labels = data_dict['labels']
@@ -294,13 +296,11 @@ def eval_model(config_yaml):
                 visual_features = [data_dict['visual_features']],
                 video_sep_ids = [data_dict['video_sep_ids']]
             )
-            import pdb; pdb.set_trace()
-
-        
-            
-
             outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0].strip()
-        predictions[name] = outputs
+            predictions[data_dict['video_id']][data_dict['clip_name']] = outputs
+    
+    with open(os.path.join(config['GenerateArguments']['model_path'], "generation.test.json"), 'w') as gen_file:
+        json.dump(predictions, gen_file)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

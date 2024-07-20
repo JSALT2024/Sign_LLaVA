@@ -71,8 +71,8 @@ class SignLlavaLlamaForCausalLM(LlamaForCausalLM, SignLlavaForCausalLM):
         video_sep_ids: torch.LongTensor = None,
         return_dict: Optional[bool] = None,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
-        self.counter += 1
-        print("forward", self.counter)
+        #self.counter += 1
+        #print("forward", self.counter)
         if inputs_embeds is None:
             (
                 input_ids,

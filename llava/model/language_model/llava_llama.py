@@ -140,7 +140,6 @@ class SignLlavaLlamaForCausalLM(LlamaForCausalLM, SignLlavaForCausalLM):
             input_ids,
             position_ids=position_ids,
             attention_mask=attention_mask,
-            past_key_values=past_key_values,
             inputs_embeds=inputs_embeds,
             **kwargs
         )

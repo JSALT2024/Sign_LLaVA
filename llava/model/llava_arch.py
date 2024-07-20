@@ -83,6 +83,9 @@ class SignLlavaForCausalLM(ABC): # adapted from LlavaMetaForCausalLM(ABC)
         # Step 4. Truncate the input to tokenizer_model_max_length
         # Step 5. Pad the input to the same length in a batch.
 
+        if visual_features == [] or input_ids.shape[1] == 1:
+            return input_ids, position_ids, attention_mask, past_key_values, None, labels
+
         # Step 1. Get projected visual features.
         projected_visual_features = []
         for vf_dict in visual_features:
@@ -100,6 +103,7 @@ class SignLlavaForCausalLM(ABC): # adapted from LlavaMetaForCausalLM(ABC)
         if position_ids is None:
             position_ids = torch.arange(0, input_ids.shape[1], dtype=torch.long, device=input_ids.device)
         # remove the padding using attention_mask
+        #import pdb; pdb.set_trace()
         input_ids = [cur_input_ids[cur_attention_mask] for cur_input_ids, cur_attention_mask in zip(input_ids, attention_mask)]
         labels = [cur_labels[cur_attention_mask] for cur_labels, cur_attention_mask in zip(labels, attention_mask)]
         new_input_embeds = []
@@ -128,7 +132,7 @@ class SignLlavaForCausalLM(ABC): # adapted from LlavaMetaForCausalLM(ABC)
             cur_new_input_embeds.append(cur_input_embeds_no_im[0])
             cur_new_labels.append(cur_labels_noim[0])
             cur_projected_feature_dict = projected_visual_features[batch_idx]
-            video_sep_embeds = self.get_model().embed_tokens(video_sep_ids[0])
+            video_sep_embeds = self.get_model().embed_tokens(torch.tensor(video_sep_ids[0]).to(input_ids[0].device))
             visual_embeddings = []
             for input_type in cur_projected_feature_dict:
                 if visual_embeddings != []:

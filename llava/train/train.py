@@ -32,7 +32,6 @@ import torch
 
 import transformers
 from transformers import set_seed
-from transformers import EarlyStoppingCallback
 import tokenizers
 
 from llava.constants import *
@@ -120,38 +119,6 @@ def maybe_zero_3(param, ignore_status=False, name=None):
     else:
         param = param.detach().cpu().clone()
     return param
-
-# Borrowed from peft.utils.get_peft_model_state_dict
-def get_peft_state_maybe_zero_3(named_params, bias):
-    if bias == "none":
-        to_return = {k: t for k, t in named_params if "lora_" in k}
-    elif bias == "all":
-        to_return = {k: t for k, t in named_params if "lora_" in k or "bias" in k}
-    elif bias == "lora_only":
-        to_return = {}
-        maybe_lora_bias = {}
-        lora_bias_names = set()
-        for k, t in named_params:
-            if "lora_" in k:
-                to_return[k] = t
-                bias_name = k.split("lora_")[0] + "bias"
-                lora_bias_names.add(bias_name)
-            elif "bias" in k:
-                maybe_lora_bias[k] = t
-        for k, t in maybe_lora_bias:
-            if bias_name in lora_bias_names:
-                to_return[bias_name] = t
-    else:
-        raise NotImplementedError
-    to_return = {k: maybe_zero_3(v, ignore_status=True) for k, v in to_return.items()}
-    return to_return
-
-def get_peft_state_non_lora_maybe_zero_3(named_params, require_grad_only=True):
-    to_return = {k: t for k, t in named_params if "lora_" not in k}
-    if require_grad_only:
-        to_return = {k: t for k, t in to_return.items() if t.requires_grad}
-    to_return = {k: maybe_zero_3(v, ignore_status=True).cpu() for k, v in to_return.items()}
-    return to_return
 
 def get_mm_adapter_state_maybe_zero_3(named_params, keys_to_match):
     to_return = {k: t for k, t in named_params if any(key_match in k for key_match in keys_to_match)}
@@ -288,13 +255,10 @@ def preprocess_llama_3(
                 f"WARNING: tokenization mismatch: {cur_len} vs. {total_len}."
                 f" (ignored)"
             )
-
     return dict(
         input_ids=input_ids,
         labels=targets,
     )
-
-
 
 class SignContextDataset(Dataset):
     """Dataset for supervised training for sign language translation with context."""
@@ -311,6 +275,8 @@ class SignContextDataset(Dataset):
             annotation_path = sign_data_args['annotation_path']['train']
         elif self.split == "dev":
             annotation_path = sign_data_args['annotation_path']['dev']
+        elif self.split == "test":
+            annotation_path = sign_data_args['annotation_path']['test']
         annotation_path = os.path.join(data_dir, annotation_path)
         self.annotation = json.load(open(annotation_path, "r")) 
         # {{video_id: {clip_id: {"translation": ..., "paraphrases": [A, B, C] }}},
@@ -332,10 +298,21 @@ class SignContextDataset(Dataset):
                     self.list_data.append((video_id, self.clip_order_to_int[video_id][clip_name]))
         for input_type in INPUT_TYPES:
             enable_feature = sign_data_args['visual_features'][input_type]['enable_input']
-            vf_train_path = sign_data_args['visual_features'][input_type]['train']
-            vf_train_path = os.path.join(data_dir, vf_train_path)
-            vf_dev_path = sign_data_args['visual_features'][input_type]['dev']
-            vf_dev_path = os.path.join(data_dir, vf_dev_path)
+            if 'train' in sign_data_args['visual_features'][input_type]:
+                vf_train_path = sign_data_args['visual_features'][input_type]['train']
+                vf_train_path = os.path.join(data_dir, vf_train_path)
+            else:
+                vf_train_path = None
+            if 'dev' in sign_data_args['visual_features'][input_type]:
+                vf_dev_path = sign_data_args['visual_features'][input_type]['dev']
+                vf_dev_path = os.path.join(data_dir, vf_dev_path)
+            else:
+                vf_dev_path = None
+            if 'test' in sign_data_args['visual_features'][input_type]:
+                vf_test_path = sign_data_args['visual_features'][input_type]['test']
+                vf_test_path = os.path.join(data_dir, vf_test_path)
+            else:
+                vf_test_path = None
             if enable_feature and vf_train_path is not None and vf_dev_path is not None:
                 if self.split == "train":
                     h5_video_clip = self.read_multih5_json(data_dir, vf_train_path, input_type)
@@ -343,6 +320,9 @@ class SignContextDataset(Dataset):
                 elif self.split == "dev":
                     h5_video_clip = self.read_multih5_json(data_dir, vf_dev_path, input_type)
                     self.remove_missing_annotation(h5_video_clip)
+            elif self.split == "test" and enable_feature and vf_test_path is not None:
+                h5_video_clip = self.read_multih5_json(data_dir, vf_test_path, input_type)
+                self.remove_missing_annotation(h5_video_clip)
             else:
                 exec(f"self.{input_type}=None")
         # self.sign2vec_train: {video_id: {clip_id: R(NxV), clip_id:...}, ..., ...}, 
@@ -641,6 +621,7 @@ def train(attn_implementation=None):
     # save the configuration.yaml
     os.makedirs(training_args.output_dir, exist_ok=True)
     shutil.copy(extra_args.yaml_args, os.path.join(training_args.output_dir, "config.yaml"))
+    model.config.save_pretrained(training_args.output_dir)
 
     # save the language prompt information
     language_prompt = {"system": conversation_lib.default_conversation.system,

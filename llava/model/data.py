@@ -1,34 +1,53 @@
-import argparse
-import torch
-import json
-import pickle
-from tqdm import tqdm
 import os
+import copy
+import random
+import shutil
+from dataclasses import dataclass, field
 import json
 import h5py
 import yaml
-import random
-import numpy
 from collections import defaultdict
+import logging
+import pathlib
+import numpy
+from typing import Dict, Optional, Sequence, List
+
+import torch
 
 import transformers
 from transformers import set_seed
+from transformers import EarlyStoppingCallback
 import tokenizers
+
 from llava.constants import *
 from torch.utils.data import Dataset
-from llava.model.signbuilder import load_pretrained_model
-from llava.utils import disable_torch_init
-from llava.mm_utils import tokenizer_video_token
-from llava import conversation as conversation_lib
+from llava.train.llava_trainer import LLaVATrainer
 
-import requests
-from io import BytesIO
-import re
+from llava import conversation as conversation_lib
+from llava.model import *
+from llava.mm_utils import tokenizer_video_token
+
+global PROMPT
+
+# set prompt
+    if sign_data_args["context_window_size"] + sign_data_args["prelude_window_size"] == 0:
+        PROMPT = PROMPT_NO_CONTEXT
+    else:
+        PROMPT = PROMPT_CONTEXT
+
+def preprocess_multimodal(
+    sources: Sequence[str]
+) -> Dict:
+    for source in sources:
+        for sentence in source:
+            replace_token = DEFAULT_VIDEO_START_TOKEN + DEFAULT_VIDEO_TOKEN + DEFAULT_VIDEO_END_TOKEN
+            sentence["value"] = sentence["value"].replace(DEFAULT_VIDEO_TOKEN, replace_token)
+    return sources
 
 def preprocess_llama_3(
     source,
     tokenizer: transformers.PreTrainedTokenizer
-):
+) -> Dict:
     conv = conversation_lib.default_conversation.copy()
     roles = {"human": conv.roles[0], "gpt": conv.roles[1]}
 
@@ -88,16 +107,12 @@ def preprocess_llama_3(
 class SignContextDataset(Dataset):
     """Dataset for supervised training for sign language translation with context."""
     def __init__(self, tokenizer: transformers.PreTrainedTokenizer,
-                sign_data_args: dict,
-                split: str,
-                prompt: str,
-                dtype):
+                 sign_data_args: dict,
+                 split: str):
         super(SignContextDataset, self).__init__()
         self.sign_data_args = sign_data_args
         self.tokenizer = tokenizer
         self.split = split
-        self.prompt = prompt
-        self.dtype = dtype
         data_dir = sign_data_args['data_dir']
 
         if self.split == "train":
@@ -160,7 +175,7 @@ class SignContextDataset(Dataset):
     def __len__(self):
         return len(self.list_data)
 
-    def __getitem__(self, i):
+    def __getitem__(self, i) -> Dict[str, torch.Tensor]:
         video_id, clip_id = self.list_data[i]
         # sources: json, 'image': 'train/06December_2011_Tuesday_tagesschau-6843'
         clip_name = self.clip_order_from_int[video_id][clip_id]
@@ -186,25 +201,23 @@ class SignContextDataset(Dataset):
         for input_type in INPUT_TYPES:
             if eval(f"self.{input_type}") is not None:
                 shard = self.h5shard[self.split][input_type][video_id]
-                vf = torch.tensor(numpy.array(eval(f"self.{input_type}")[shard][video_id][clip_name])).to(self.dtype)
+                vf = torch.tensor(numpy.array(eval(f"self.{input_type}")[shard][video_id][clip_name]))
                 visual_features[input_type] = vf
         src = {}
         src['id'] = "({0},{1})".format(str(video_id), str(clip_id))
         video_token = DEFAULT_VIDEO_START_TOKEN + DEFAULT_VIDEO_TOKEN + DEFAULT_VIDEO_END_TOKEN
         src['conversations'] = [{'from': 'human', 
-                'value':video_token+'\n'+self.prompt.replace('<context>', ' '.join(context))},
+                'value':video_token+'\n'+PROMPT.replace('<context>', ' '.join(context))},
                 {'from': 'gpt',
                 'value':translation}]
 
         # <video> -> <video_start><video><video_end>
         data_dict = preprocess_llama_3(src, self.tokenizer)
         data_dict = dict(input_ids=data_dict["input_ids"][0],
-                        labels=data_dict["labels"][0])
+                         labels=data_dict["labels"][0])
         data_dict['visual_features'] = visual_features
         video_sep = DEFAULT_VIDEO_END_TOKEN+DEFAULT_VIDEO_START_TOKEN
         data_dict['video_sep_ids'] = tokenizer_video_token(video_sep, self.tokenizer, return_tensors='pt')
-        data_dict['video_id'] = video_id
-        data_dict['clip_name'] = clip_name
         return data_dict
 
     def read_multih5_json(self, data_dir, json_filename, input_type):
@@ -224,87 +237,56 @@ class SignContextDataset(Dataset):
                     clip_id = self.clip_order_to_int[vi][ci]
                     h5_video_clip.add((vi, clip_id))
         return h5_video_clip
+    
 
     def remove_missing_annotation(self, h5_video_clip):
         annotations_to_delete = set(self.list_data) - h5_video_clip
         for a in annotations_to_delete:
             self.list_data.remove(a)
+ 
 
-def set_same_seed(seed):
-    random.seed(seed)
-    os.environ['PYTHONHASHSEED'] = str(seed)
-    numpy.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.backends.cudnn.deterministic = True
-    set_seed(seed)
+@dataclass
+class DataCollatorForSupervisedDataset(object):
+    """Collate examples for supervised fine-tuning."""
 
-def eval_model(config_yaml):
-    with open(config_yaml, 'r') as yaml_file:
-        config = yaml.safe_load(yaml_file)
+    tokenizer: transformers.PreTrainedTokenizer
 
-    set_same_seed(config['GenerateArguments']['seed'])
+    def __call__(self, instances: Sequence[Dict]) -> Dict[str, torch.Tensor]:
+        input_ids, labels, video_sep_ids, visual_features = tuple([instance[key] for instance in instances]
+                                  for key in ("input_ids", "labels", "video_sep_ids", "visual_features"))
+        input_ids = torch.nn.utils.rnn.pad_sequence(
+            input_ids,
+            batch_first=True,
+            padding_value=self.tokenizer.pad_token_id)
+        labels = torch.nn.utils.rnn.pad_sequence(labels,
+                                                 batch_first=True,
+                                                 padding_value=IGNORE_INDEX)
+        input_ids = input_ids[:, :self.tokenizer.model_max_length]
+        labels = labels[:, :self.tokenizer.model_max_length]
+        batch = dict(
+            input_ids=input_ids,
+            labels=labels,
+            video_sep_ids=video_sep_ids,
+            visual_features=visual_features,
+            attention_mask=input_ids.ne(self.tokenizer.pad_token_id),
+        )
+        return batch
 
-    dtype = torch.bfloat16 if config['GenerateArguments']['bf16'] else torch.float16
-    # Model
-    disable_torch_init()
 
-    tokenizer, model, model_max_length = load_pretrained_model(config, use_flash_attn=False)
-    if tokenizer.unk_token is None:
-        tokenizer.add_special_tokens({"unk_token":"<unk>"})
-    tokenizer.pad_token = tokenizer.unk_token
-    tokenizer.padding_side = "right"
-    video_token = DEFAULT_VIDEO_START_TOKEN + DEFAULT_VIDEO_TOKEN + DEFAULT_VIDEO_END_TOKEN
-
-    conv_mode = config['GenerateArguments']['conv_mode']
-
-    # set prompt
-    sign_data_args = config['SignDataArguments']
-    if sign_data_args["context_window_size"] + sign_data_args["prelude_window_size"] == 0:
-        prompt = PROMPT_NO_CONTEXT
-    else:
-        prompt = PROMPT_CONTEXT
-
-    test_dataset = SignContextDataset(
+def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer,
+                                sign_data_args) -> Dict:
+    """Make dataset and collator for supervised fine-tuning."""
+    train_dataset = SignContextDataset(
         tokenizer = tokenizer,
         sign_data_args = sign_data_args,
-        split = "test",
-        prompt = prompt,
-        dtype=dtype
+        split = "train"
     )
-    
-    predictions = {}
-    with torch.inference_mode():
-        for i in range(len(test_dataset)):
-            data_dict = test_dataset[i]
-            input_ids = data_dict['input_ids']
-            labels = data_dict['labels']
-            input_ids = torch.nn.utils.rnn.pad_sequence(
-                input_ids.unsqueeze(0),
-                batch_first=True,
-                padding_value=tokenizer.pad_token_id)
-            labels = torch.nn.utils.rnn.pad_sequence(labels.unsqueeze(0),
-                                                    batch_first=True,
-                                                    padding_value=IGNORE_INDEX)
-            input_ids = input_ids[:, :model_max_length].to(model.device)
-            labels = labels[:, :model_max_length].to(model.device)
-            output_ids = model.generate(
-                inputs = input_ids,
-                labels = labels,
-                visual_features = [data_dict['visual_features']],
-                video_sep_ids = [data_dict['video_sep_ids']]
-            )
-            import pdb; pdb.set_trace()
-
-        
-            
-
-            outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0].strip()
-        predictions[name] = outputs
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--yaml_args", type=str, default="signllava/configs/eval.yaml")
-    args = parser.parse_args()
-
-    eval_model(args.yaml_args)
+    dev_dataset = SignContextDataset(
+        tokenizer = tokenizer,
+        sign_data_args = sign_data_args,
+        split = "dev"
+    )
+    data_collator = DataCollatorForSupervisedDataset(tokenizer=tokenizer)
+    return dict(train_dataset=train_dataset,
+                eval_dataset=dev_dataset,
+                data_collator=data_collator)

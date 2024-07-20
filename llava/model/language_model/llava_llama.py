@@ -50,6 +50,8 @@ class SignLlavaLlamaForCausalLM(LlamaForCausalLM, SignLlavaForCausalLM):
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
         # Initialize weights and apply final processing
         self.post_init()
+        self.counter = 0
+        self.gen_counter = 0
 
     def get_model(self):
         return self.model
@@ -69,22 +71,25 @@ class SignLlavaLlamaForCausalLM(LlamaForCausalLM, SignLlavaForCausalLM):
         video_sep_ids: torch.LongTensor = None,
         return_dict: Optional[bool] = None,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
-        (
-            input_ids,
-            position_ids,
-            attention_mask,
-            past_key_values,
-            inputs_embeds,
-            labels
-        ) = self.prepare_inputs_and_labels(
-            input_ids,
-            position_ids,
-            attention_mask,
-            past_key_values,
-            labels,
-            video_sep_ids,
-            visual_features
-        )
+        self.counter += 1
+        print("forward", self.counter)
+        if inputs_embeds is None:
+            (
+                input_ids,
+                position_ids,
+                attention_mask,
+                past_key_values,
+                inputs_embeds,
+                labels
+            ) = self.prepare_inputs_and_labels(
+                input_ids,
+                position_ids,
+                attention_mask,
+                past_key_values,
+                labels,
+                video_sep_ids,
+                visual_features
+            )
         return super().forward(
             input_ids=input_ids,
             attention_mask=attention_mask,
@@ -99,48 +104,56 @@ class SignLlavaLlamaForCausalLM(LlamaForCausalLM, SignLlavaForCausalLM):
         )
 
     @torch.no_grad()
-    ##TODO
     def generate(
         self,
         inputs: Optional[torch.Tensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_values: Optional[List[torch.FloatTensor]] = None,
+        labels: Optional[torch.LongTensor] = None,
         visual_features: list = [],
         video_sep_ids: torch.LongTensor = None,
         **kwargs,
     ) -> Union[GenerateOutput, torch.LongTensor]:
         position_ids = kwargs.pop("position_ids", None)
         attention_mask = kwargs.pop("attention_mask", None)
-        (
-            input_ids,
-            position_ids,
-            attention_mask,
-            past_key_values,
-            inputs_embeds,
-            labels
-        ) = self.prepare_inputs_and_labels(
-            input_ids,
-            position_ids,
-            attention_mask,
-            past_key_values,
-            labels,
-            video_sep_ids,
-            visual_features
-        )
+        if visual_features != []:
+            (
+                input_ids,
+                position_ids,
+                attention_mask,
+                past_key_values,
+                inputs_embeds,
+                labels
+            ) = self.prepare_inputs_and_labels(
+                inputs,
+                position_ids,
+                attention_mask,
+                past_key_values,
+                labels,
+                video_sep_ids,
+                visual_features
+            )
+        else:
+            inputs_embeds = self.get_model().embed_tokens(inputs)
         return super().generate(
+            input_ids,
             position_ids=position_ids,
             attention_mask=attention_mask,
+            past_key_values=past_key_values,
             inputs_embeds=inputs_embeds,
             **kwargs
         )
     
     ###TODO
+    '''
     def prepare_inputs_for_generation(self, input_ids, past_key_values=None,
                                       inputs_embeds=None, **kwargs):
-        images = kwargs.pop("images", None)
-        image_sizes = kwargs.pop("image_sizes", None)
         inputs = super().prepare_inputs_for_generation(
             input_ids, past_key_values=past_key_values, inputs_embeds=inputs_embeds, **kwargs
         )
         return inputs
+    '''
     ###TODO
 
 

@@ -24,6 +24,7 @@ IMAGE_PLACEHOLDER = "<image-placeholder>"
 DEFAULT_VIDEO_TOKEN = "<video>"
 DEFAULT_VIDEO_START_TOKEN = "<video_start>"
 DEFAULT_VIDEO_END_TOKEN = "<video_end>"
+VIDEO_PLACEHOLDER = "<video>"
 # Baseline: "<video_start>vf1<video_end><video_start>vf2<video_end>"
 # "the first visual feature stream: "<video_start>vf1<video_end>"the second visual feature stream: "<video_start>vf2<video_end>
 INPUT_TYPES = ["mae", "sign2vec", "dino", "pose"]

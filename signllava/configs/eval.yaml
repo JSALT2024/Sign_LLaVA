@@ -1,6 +1,6 @@
 
 GenerateArguments:
-  model_path: signllava/checkpoints/llama3_8b_v1/
+  model_path: signllava/checkpoints/llama3_8b_pre/
   model_base: meta-llama/Meta-Llama-3-8B-Instruct
   conv_mode: llava_sign_llama_3
   top_p: None
@@ -8,6 +8,17 @@ GenerateArguments:
   num_beams: 5
   max_new_tokens: 512
   seed: 42
+  bf16: True
+LoraArguments:
+  double_quant: True # Compress the quantization statistics through double quantization.
+  quant_type: nf4
+  bits: 16 # 4, 8 to enable quantization
+  lora_enable: False
+  lora_r: 64
+  lora_alpha: 16
+  lora_dropout: 0.05
+  lora_weight_path: ""
+  lora_bias: "none"
 SignDataArguments:
   context_window_size: 0 #number of preceding sentences
   prelude_window_size: 0 #number of sentences at the beginning of the discourse 

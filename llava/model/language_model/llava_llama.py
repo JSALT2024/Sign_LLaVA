@@ -145,14 +145,19 @@ class SignLlavaLlamaForCausalLM(LlamaForCausalLM, SignLlavaForCausalLM):
         )
     
     ###TODO
-    '''
     def prepare_inputs_for_generation(self, input_ids, past_key_values=None,
                                       inputs_embeds=None, **kwargs):
+
+        visual_features = kwargs.pop("visual_features", None)
+        video_sep_ids = kwargs.pop("video_sep_ids", None)
         inputs = super().prepare_inputs_for_generation(
             input_ids, past_key_values=past_key_values, inputs_embeds=inputs_embeds, **kwargs
         )
+        if visual_features is not None:
+            inputs['visual_features'] = visual_features
+        if video_sep_ids is not None:
+            inputs['video_sep_ids'] = video_sep_ids
         return inputs
-    '''
     ###TODO
 
 

@@ -2,7 +2,7 @@
 # Uncomment and set the following variables correspondingly to run this script:
 
 # MODEL_VERSION=vicuna-v1-3-7b
-MODEL_VERSION=Meta-Llama-Guard-2-8B #Llama-2-7b-chat-hf
+MODEL_VERSION=Meta-Llama-3-8B-Instruct #Meta-Llama-Guard-2-8B #Llama-2-7b-chat-hf
 #MODEL_VERSION=Meta-Llama-3-70B-Instruct
 PROMPT_VERSION=llava_sign_llama_3 #llava_llama_2
 ########### DO NOT CHANGE ###########
@@ -37,7 +37,7 @@ deepspeed --include localhost:${CUDA_ID} --master_port=29501 llava/train/train_x
     --gradient_accumulation_steps 16 \
     --evaluation_strategy "no" \
     --save_strategy "steps" \
-    --save_steps 200 \
+    --save_steps 10 \
     --save_total_limit 5 \
     --learning_rate 2e-3 \
     --weight_decay 0.1 \

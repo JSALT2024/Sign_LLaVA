@@ -49,6 +49,7 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
         # Initialize weights and apply final processing
         self.post_init()
+        self.counter = 0
 
     def get_model(self):
         return self.model
@@ -69,6 +70,9 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
         image_sizes: Optional[List[List[int]]] = None,
         return_dict: Optional[bool] = None,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
+        self.counter += 1
+        print("forward", self.counter)
+        import pdb; pdb.set_trace()
         if s3d and inputs_embeds is None:
             (
                 input_ids,

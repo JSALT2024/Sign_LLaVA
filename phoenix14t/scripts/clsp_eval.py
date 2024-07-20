@@ -20,7 +20,7 @@ def get_args():
 def main():
     args = get_args()
     model_path = args.checkpoint
-    model_base = "lmsys/vicuna-7b-v1.3"
+    model_base = "meta-llama/Meta-Llama-3-8B-Instruct"
     args = type('Args', (), {
     "model_path": model_path,
     "model_base": model_base,

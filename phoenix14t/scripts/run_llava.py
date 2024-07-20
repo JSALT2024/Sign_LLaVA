@@ -49,6 +49,8 @@ def eval_model(args):
         conv_mode = "llava_v1"
     elif "mpt" in model_name.lower():
         conv_mode = "mpt"
+    elif "llama-3" in model_name.lower():
+        conv_mode = "llava_sign_llama_3"
     else:
         conv_mode = "llava_v0"
 

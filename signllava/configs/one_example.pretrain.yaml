@@ -3,7 +3,7 @@ ModelArguments:
   version: llava_sign_llama_3
   tune_mm_mlp_adapter: True 
 TrainingArguments:
-  output_dir: signllava/checkpoints/one_example
+  output_dir: signllava/checkpoints/one_example_no_warmip
   model_max_length: 2048
   bf16: True
   per_device_train_batch_size: 1
@@ -15,14 +15,14 @@ TrainingArguments:
   evaluation_strategy: steps
   save_strategy: steps
   eval_steps: 1
-  save_steps: 50
+  save_steps: 100
   logging_steps: 1
   num_train_epochs: 500
   metric_for_best_model: eval_loss
   load_best_model_at_end: True
   save_total_limit: 5
   weight_decay: 0.1
-  warmup_ratio: 0.03
+  warmup_ratio: 0
   dataloader_num_workers: 0
   learning_rate: 0.002
   lr_scheduler_type: cosine
@@ -37,6 +37,7 @@ TrainingArguments:
   lora_weight_path: ""
   lora_bias: "none"
   group_by_modality_length: False
+  optimizers: "sgd"
   seed: 42
   data_seed: 42
 SignDataArguments:

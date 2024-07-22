@@ -206,6 +206,7 @@ class SignContextDataset(Dataset):
         data_dict['video_sep_ids'] = tokenizer_video_token(video_sep, self.tokenizer, return_tensors='pt')
         data_dict['video_id'] = video_id
         data_dict['clip_name'] = clip_name
+        data_dict['reference'] = translation
         return data_dict
 
     def read_multih5_json(self, data_dir, json_filename, input_type):
@@ -292,6 +293,7 @@ def eval_model(config_yaml):
             data_dict = test_dataset[i]
             input_ids = data_dict['input_ids']
             labels = data_dict['labels']
+            translation = data_dict['reference']
             input_ids = torch.nn.utils.rnn.pad_sequence(
                 input_ids.unsqueeze(0),
                 batch_first=True,
@@ -310,8 +312,7 @@ def eval_model(config_yaml):
                 **generate_kwargs
             )
             outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=False)[0].strip()
-            print(labels)
-            print(output_ids)
+            print("reference:", translation)
             print("outputs:", outputs)
             predictions[data_dict['video_id']][data_dict['clip_name']] = outputs
     

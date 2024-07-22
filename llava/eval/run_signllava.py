@@ -273,10 +273,21 @@ def eval_model(config_yaml):
         prompt = prompt,
         dtype=dtype
     )
+
+    generate_kwargs = {
+        "max_new_tokens": config['GenerateArguments']['max_new_tokens'],
+        "temperature": config['GenerateArguments']['temperature'],
+        "top_p": config['GenerateArguments']['top_p'],
+        "num_beams": config['GenerateArguments']['num_beams'],
+        "min_length": config['GenerateArguments']['min_length'],
+        "do_sample": config['GenerateArguments']['do_sample']
+        }
+
+    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
     
     predictions = defaultdict(dict)
     with torch.inference_mode():
-        for i in tqdm.tqdm(range(10)):
+        for i in tqdm.tqdm(range(30)):
         #for i in tqdm.tqdm(range(len(test_dataset))):
             data_dict = test_dataset[i]
             input_ids = data_dict['input_ids']
@@ -294,9 +305,14 @@ def eval_model(config_yaml):
                 inputs = input_ids,
                 labels = labels,
                 visual_features = [data_dict['visual_features']],
-                video_sep_ids = [data_dict['video_sep_ids']]
+                video_sep_ids = [data_dict['video_sep_ids']],
+                pad_token_id = tokenizer.unk_token_id,
+                **generate_kwargs
             )
-            outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0].strip()
+            outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=False)[0].strip()
+            print(labels)
+            print(output_ids)
+            print("outputs:", outputs)
             predictions[data_dict['video_id']][data_dict['clip_name']] = outputs
     
     with open(os.path.join(config['GenerateArguments']['model_path'], "generation.test.json"), 'w') as gen_file:

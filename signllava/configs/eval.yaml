@@ -3,8 +3,8 @@ GenerateArguments:
   model_path: signllava/checkpoints/llama3_8b_pre/
   model_base: meta-llama/Meta-Llama-3-8B-Instruct
   conv_mode: llava_sign_llama_3
-  top_p: None
-  temperature: 0
+  top_p: 1
+  temperature: 0.1
   num_beams: 5
   max_new_tokens: 512
   seed: 42

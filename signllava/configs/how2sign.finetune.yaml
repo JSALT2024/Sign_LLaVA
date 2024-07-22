@@ -1,36 +1,36 @@
 ModelArguments:
   model_name_or_path: meta-llama/Meta-Llama-3-8B-Instruct #meta-llama/Meta-Llama-3-70B-Instruct #
   version: llava_sign_llama_3
-  tune_mm_mlp_adapter: True 
+  tune_mm_mlp_adapter: True
 TrainingArguments:
-  output_dir: signllava/checkpoints/llama3_8b_pre
+  output_dir: signllava/checkpoints/how2sign_llama3_8b_nocontext_mae_finetune_b8
   model_max_length: 2048
   bf16: True
   #per_device_train_batch_size: 1
-  #per_device_eval_batch_size: 1
+  per_device_eval_batch_size: 1
   auto_find_batch_size: True
-  resume_from_checkpoint: True
+  resume_from_checkpoint: False
   do_train: True
   do_eval: True
   evaluation_strategy: steps
   save_strategy: steps
-  eval_steps: 10
-  save_steps: 10
-  logging_steps: 10
+  eval_steps: 300
+  save_steps: 300
+  logging_steps: 300
+  num_train_epochs: 40
   metric_for_best_model: eval_loss
   load_best_model_at_end: True
   save_total_limit: 5
   weight_decay: 0.1
   warmup_ratio: 0.03
-  dataloader_num_workers: 2
-  num_train_epochs: 10
-  learning_rate: 0.002
+  dataloader_num_workers: 4
+  learning_rate: 0.00002
   lr_scheduler_type: cosine
   gradient_checkpointing: True
   double_quant: True # Compress the quantization statistics through double quantization.
   quant_type: nf4
-  bits: 16 # 4, 8 to enable quantization
-  lora_enable: False
+  bits: 4 # 4, 8 to enable quantization
+  lora_enable: True
   lora_r: 64
   lora_alpha: 16
   lora_dropout: 0.05
@@ -42,7 +42,7 @@ TrainingArguments:
 SignDataArguments:
   context_window_size: 0 #number of preceding sentences
   prelude_window_size: 0 #number of sentences at the beginning of the discourse 
-  data_dir: /export/fs06/xzhan138/Sign_LLaVA/mock_data_multi/
+  data_dir: /export/fs06/xzhan138/Sign_LLaVA/signllava/data/How2Sign
   annotation_path:
     train: annotation.train.json
     dev: annotation.dev.json
@@ -52,7 +52,7 @@ SignDataArguments:
       train: sign2vec/metadata_sign2vec.train.json
       dev: sign2vec/metadata_sign2vec.dev.json
     mae:
-      enable_input: False
+      enable_input: True
       train: mae/metadata_mae.train.json
       dev: mae/metadata_mae.dev.json
     dino:
@@ -60,11 +60,12 @@ SignDataArguments:
       train: dino/metadata_dino.train.json
       dev: dino/metadata_dino.dev.json
     pose:
-      enable_input: True
+      enable_input: False
       train: pose/metadata_pose.train.json
       dev: pose/metadata_pose.dev.json
 SignModelArguments:
   projectors:
+    pretrained_projector_ckpt: signllava/checkpoints/how2sign_llama3_8b_nocontext_mae_pretrain_b8/checkpoint-900/global_step900/mp_rank_00_model_states.pt
     sign2vec: 
       dim: 768
       projector_type: mlp2x_gelu
@@ -75,5 +76,5 @@ SignModelArguments:
       dim: 384
       projector_type: mlp2x_gelu
     pose: 
-      dim: 32
+      dim: 224
       projector_type: mlp2x_gelu

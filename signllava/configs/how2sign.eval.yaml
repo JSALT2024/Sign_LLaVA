@@ -1,11 +1,14 @@
 
 GenerateArguments:
-  model_path: signllava/checkpoints/how2sign_llama3_8b_nocontext_pose_pretrain/
+  #model_path: signllava/checkpoints/how2sign_llama3_8b_nocontext_pose_pretrain/
+  model_path: signllava/checkpoints/llama3_8b_pre_400ep_full_input
   model_base: meta-llama/Meta-Llama-3-8B-Instruct
   conv_mode: llava_sign_llama_3
-  top_p: None
-  temperature: 0
-  num_beams: 5
+  top_p: 1
+  min_length: 5
+  temperature: 0.1
+  do_sample: True # otherwise use greedy decoding
+  num_beams: 1
   max_new_tokens: 512
   seed: 42
   bf16: True
@@ -30,14 +33,15 @@ SignDataArguments:
       enable_input: False
       test: sign2vec/metadata_sign2vec.dev.json
     mae:
-      enable_input: False
-      test: mae/metadata_mae.dev.json
+      enable_input: True
+      test: mae/metadata_mae.train.json
     dino:
       enable_input: False
       test: dino/metadata_dino.dev.json
     pose:
       enable_input: True
-      test: pose/metadata_pose.train.json
+      test: tomas/keypoints/H2S.keypoints.train.json
+      #test: pose/metadata_pose.dev.json
 SignModelArguments:
   projectors:
     sign2vec: 
@@ -50,5 +54,5 @@ SignModelArguments:
       dim: 384
       projector_type: mlp2x_gelu
     pose: 
-      dim: 224
+      dim: 208
       projector_type: mlp2x_gelu

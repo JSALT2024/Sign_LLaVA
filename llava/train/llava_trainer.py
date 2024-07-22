@@ -279,6 +279,17 @@ class LLaVATrainer(Trainer):
             self._rotate_checkpoints(use_mtime=False, output_dir=run_dir)
         else:
             super(LLaVATrainer, self)._save_checkpoint(model, trial, metrics)
+        
+        if self.args.lora_enable:
+            state_dict = get_peft_state_maybe_zero_3(
+                model.named_parameters(), self.args.lora_bias
+            )
+            non_lora_state_dict = get_peft_state_non_lora_maybe_zero_3(
+                model.named_parameters()
+            )
+            if self.args.local_rank == 0 or self.args.local_rank == -1:
+                model.save_pretrained(output_dir, state_dict=state_dict)
+                torch.save(non_lora_state_dict, os.path.join(output_dir, 'non_lora_trainables.bin'))
     
     def _save(self, output_dir: Optional[str] = None, state_dict=None):
         if getattr(self.args, 'tune_mm_mlp_adapter', False):

@@ -641,6 +641,7 @@ def train(attn_implementation=None):
     # save the configuration.yaml
     os.makedirs(training_args.output_dir, exist_ok=True)
     shutil.copy(extra_args.yaml_args, os.path.join(training_args.output_dir, "config.yaml"))
+    model.config.save_pretrained(training_args.output_dir)
 
     # save the language prompt information
     language_prompt = {"system": conversation_lib.default_conversation.system,

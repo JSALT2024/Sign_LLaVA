@@ -309,8 +309,14 @@ def eval_model(config_yaml):
                 visual_features = [data_dict['visual_features']],
                 video_sep_ids = [data_dict['video_sep_ids']],
                 pad_token_id = tokenizer.unk_token_id,
+                output_scores = True,
+                return_dict_in_generate=True,
                 **generate_kwargs
             )
+            cre = torch.nn.CrossEntropyLoss(ignore_index=IGNORE_INDEX)
+            import pdb; pdb.set_trace()
+            loss = cre(output_ids.to(torch.bfloat16), labels.to(torch.bfloat16))
+            print(loss)
             outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=False)[0].strip()
             print("reference:", translation)
             print("outputs:", outputs)

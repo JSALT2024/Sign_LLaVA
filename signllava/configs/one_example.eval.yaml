@@ -1,7 +1,7 @@
 
 GenerateArguments:
   #model_path: signllava/checkpoints/how2sign_llama3_8b_nocontext_pose_pretrain/
-  model_path: signllava/checkpoints/one_example
+  model_path: signllava/checkpoints/one_example_no_warmip
   model_base: meta-llama/Meta-Llama-3-8B-Instruct
   conv_mode: llava_sign_llama_3
   top_p: 1

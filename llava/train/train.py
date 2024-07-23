@@ -358,7 +358,6 @@ class SignContextDataset(Dataset):
         trans_dict = self.annotation[video_id][self.clip_order_from_int[video_id][clip_id]]
         if self.sign_data_args.get('use_paraphrases', False):
             translation = random.choice(trans_dict['paraphrases'] + [trans_dict['translation']])
-            print("yeahbut")
         else:
             translation = trans_dict['translation']
         # Get context: concatenate preceding sentences, 

@@ -390,8 +390,10 @@ class SignContextDataset(Dataset):
 
             for vi in eval(f"self.{input_type}[k]").keys():
                 for ci in eval(f"self.{input_type}[k][vi]").keys():
-                    clip_id = self.clip_order_to_int[vi][ci]
-                    h5_video_clip.add((vi, clip_id))
+                    if vi in self.clip_order_to_int:
+                        if ci in self.clip_order_to_int[vi]:
+                            clip_id = self.clip_order_to_int[vi][ci]
+                            h5_video_clip.add((vi, clip_id))
         return h5_video_clip
     
 
@@ -463,7 +465,6 @@ def set_same_seed(seed):
 def train(attn_implementation=None):
     global local_rank
     global PROMPT
-
     parser = transformers.HfArgumentParser(
         (ModelArguments, TrainingArguments, ExtraArguments))
     model_args, training_args, extra_args = parser.parse_args_into_dataclasses()

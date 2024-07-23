@@ -5,7 +5,7 @@ GenerateArguments:
   model_base: meta-llama/Meta-Llama-3-8B-Instruct
   conv_mode: llava_sign_llama_3
   top_p: 1
-  min_length: 5
+  min_length: 10
   temperature: 0.1
   do_sample: True # otherwise use greedy decoding
   num_beams: 1

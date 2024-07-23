@@ -303,7 +303,7 @@ def eval_model(config_yaml):
                                                     padding_value=IGNORE_INDEX)
             input_ids = input_ids[:, :model_max_length].to(model.device)
             labels = labels[:, :model_max_length].to(model.device)
-            output_ids = model.generate(
+            output_dict = model.generate(
                 inputs = input_ids,
                 labels = labels,
                 visual_features = [data_dict['visual_features']],
@@ -311,16 +311,30 @@ def eval_model(config_yaml):
                 pad_token_id = tokenizer.unk_token_id,
                 output_scores = True,
                 return_dict_in_generate=True,
+                forced_bos_token_id = tokenizer.encode("\n\n")[1:],
+                decoder_start_token_id = tokenizer.encode("\n\n")[1:],
+                bos_token_id = tokenizer.encode("\n\n")[1],
                 **generate_kwargs
             )
-            cre = torch.nn.CrossEntropyLoss(ignore_index=IGNORE_INDEX)
-            import pdb; pdb.set_trace()
-            loss = cre(output_ids.to(torch.bfloat16), labels.to(torch.bfloat16))
-            print(loss)
+            #import pdb; pdb.set_trace()
+            #labels = labels[0][114:].unsqueeze(0)
+            #cre = torch.nn.CrossEntropyLoss()
+            #import pdb; pdb.set_trace()
+            scores = torch.stack(list(output_dict['scores'])).to(dtype).unsqueeze(0).squeeze(2)
+            #vocab_size = 128259
+            #import pdb; pdb.set_trace()
+            #loss = cre(scores.view(-1, vocab_size), labels.to(dtype).view(-1))
+            #import pdb; pdb.set_trace()
+            #loss = cre(scores, labels.to(dtype))
+            #print(loss)
+            output_ids = output_dict['sequences']
             outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=False)[0].strip()
             print("reference:", translation)
             print("outputs:", outputs)
+            print("scores", scores)
+            print("output_ids", output_ids)
             predictions[data_dict['video_id']][data_dict['clip_name']] = outputs
+            import pdb; pdb.set_trace()
     
     with open(os.path.join(config['GenerateArguments']['model_path'], "generation.test.json"), 'w') as gen_file:
         json.dump(predictions, gen_file)

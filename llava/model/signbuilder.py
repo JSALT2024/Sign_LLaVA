@@ -42,7 +42,7 @@ def load_pretrained_model(config, use_flash_attn=False, device_map="auto", devic
             bnb_4bit_quant_type='nf4'
         )
     else:
-        kwargs['torch_dtype'] = torch.bfloat16 if config['GenerateArguments']['bf16'] else None
+        kwargs['torch_dtype'] = torch.bfloat16 if config['GenerateArguments']['bf16'] else torch.float16
 
     if use_flash_attn:
         kwargs['attn_implementation'] = 'flash_attention_2'
@@ -91,7 +91,6 @@ def load_pretrained_model(config, use_flash_attn=False, device_map="auto", devic
         print('Model is loaded...')
     else:
         # this may be mm projector only
-        print('Loading LLaVA from base model...')
         tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False)
         if tokenizer.unk_token is None:
             tokenizer.add_special_tokens({"unk_token":"<unk>"})
@@ -109,7 +108,7 @@ def load_pretrained_model(config, use_flash_attn=False, device_map="auto", devic
         model.resize_token_embeddings(len(tokenizer))
         model_state_path = glob.glob(os.path.join(model_path, "checkpoint*/global_step*/*model_states.pt"))[0]
         mm_projector_weights = torch.load(model_state_path, map_location='cpu')['module']
-        mm_projector_weights = {k: v.to(torch.bfloat16) for k, v in mm_projector_weights.items()}
+        mm_projector_weights = {k: v.to(kwargs['torch_dtype']) for k, v in mm_projector_weights.items()}
         model.load_state_dict(mm_projector_weights, strict=False)
 
     if hasattr(model.config, "max_sequence_length"):

@@ -49,6 +49,7 @@ def load_pretrained_model(config, use_flash_attn=False, device_map="auto", devic
 
     model_path = config['GenerateArguments']['model_path']
     model_base = config['GenerateArguments']['model_base']
+    checkpoint_num = config['GenerateArguments']['checkpoint_num']
     # Load LLaVA model
     if lora_config['lora_enable']:
         from llava.model.language_model.llava_llama import LlavaConfig
@@ -73,7 +74,7 @@ def load_pretrained_model(config, use_flash_attn=False, device_map="auto", devic
             model.model.embed_tokens.weight = torch.nn.Parameter(torch.empty(token_num, tokem_dim, device=model.device, dtype=model.dtype))
 
         print('Loading additional LLaVA weights...')
-        if os.path.exists(os.path.join(model_path, 'non_lora_trainables.bin')):
+        if os.path.exists(os.path.join(model_path, f"checkpoint-{checkpoint_num}", 'non_lora_trainables.bin')):
             non_lora_trainables = torch.load(os.path.join(model_path, 'non_lora_trainables.bin'), map_location='cpu')
         else:
             non_lora_trainables = {}
@@ -82,7 +83,7 @@ def load_pretrained_model(config, use_flash_attn=False, device_map="auto", devic
             non_lora_trainables = {(k[6:] if k.startswith('model.') else k): v for k, v in non_lora_trainables.items()}
         model.load_state_dict(non_lora_trainables, strict=False)
 
-        peft_model_path = glob.glob(os.path.join(model_path, "checkpoint*"))[0]
+        peft_model_path = os.path.join(model_path, f"checkpoint-{checkpoint_num}")
         from peft import PeftModel
         print('Loading LoRA weights...')
         model = PeftModel.from_pretrained(model, peft_model_path)
@@ -106,7 +107,7 @@ def load_pretrained_model(config, use_flash_attn=False, device_map="auto", devic
                 **kwargs)
         tokenizer.add_tokens([DEFAULT_VIDEO_START_TOKEN, DEFAULT_VIDEO_END_TOKEN], special_tokens=True)
         model.resize_token_embeddings(len(tokenizer))
-        model_state_path = glob.glob(os.path.join(model_path, "checkpoint*/global_step*/*model_states.pt"))[0]
+        model_state_path = glob.glob(os.path.join(model_path, f"checkpoint-{checkpoint_num}/global_step{checkpoint_num}/*model_states.pt"))[0]
         mm_projector_weights = torch.load(model_state_path, map_location='cpu')['module']
         mm_projector_weights = {k: v.to(kwargs['torch_dtype']) for k, v in mm_projector_weights.items()}
         model.load_state_dict(mm_projector_weights, strict=False)

@@ -99,7 +99,7 @@ def get_length_grouped_indices(lengths, batch_size, world_size, generator=None, 
 
 
 class LengthGroupedSampler(Sampler):
-    r"""
+    """
     Sampler that samples indices in a way that groups together features of the dataset of roughly the same length while
     keeping a bit of randomness.
     """
@@ -162,7 +162,6 @@ def get_peft_state_non_lora_maybe_zero_3(named_params, require_grad_only=True):
         to_return = {k: t for k, t in to_return.items() if t.requires_grad}
     to_return = {k: maybe_zero_3(v, ignore_status=True).cpu() for k, v in to_return.items()}
     return to_return
-
 
 class LLaVATrainer(Trainer):
 

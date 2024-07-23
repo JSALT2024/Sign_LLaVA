@@ -1,7 +1,8 @@
 
 GenerateArguments:
   #model_path: signllava/checkpoints/how2sign_llama3_8b_nocontext_pose_pretrain/
-  model_path: signllava/checkpoints/llama3_8b_pre_400ep_full_input
+  model_path: signllava/checkpoints/llama3_8b_pre_400ep_mae_dino_sign2vec
+  checkpoint_num: 3950
   model_base: meta-llama/Meta-Llama-3-8B-Instruct
   conv_mode: llava_sign_llama_3
   top_p: 1
@@ -23,6 +24,7 @@ LoraArguments:
   lora_weight_path: ""
   lora_bias: "none"
 SignDataArguments:
+  use_paraphrases: False
   context_window_size: 0 #number of preceding sentences
   prelude_window_size: 0 #number of sentences at the beginning of the discourse 
   data_dir: /export/fs06/xzhan138/Sign_LLaVA/signllava/data/How2Sign/
@@ -30,16 +32,16 @@ SignDataArguments:
     test: annotation.train.json
   visual_features:
     sign2vec:
-      enable_input: False
-      test: sign2vec/metadata_sign2vec.dev.json
+      enable_input: True
+      test: sign2vec/metadata_sign2vec.train.json
     mae:
       enable_input: True
       test: mae/metadata_mae.train.json
     dino:
-      enable_input: False
-      test: dino/metadata_dino.dev.json
-    pose:
       enable_input: True
+      test: dino/H2S.dino.train.json
+    pose:
+      enable_input: False
       test: tomas/keypoints/H2S.keypoints.train.json
       #test: pose/metadata_pose.dev.json
 SignModelArguments:
@@ -51,7 +53,7 @@ SignModelArguments:
       dim: 768
       projector_type: mlp2x_gelu
     dino: 
-      dim: 384
+      dim: 1152
       projector_type: mlp2x_gelu
     pose: 
       dim: 208

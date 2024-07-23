@@ -11,6 +11,7 @@ import random
 import numpy
 from collections import defaultdict
 import tqdm
+import shutil
 
 import transformers
 from transformers import set_seed
@@ -166,8 +167,10 @@ class SignContextDataset(Dataset):
         # sources: json, 'image': 'train/06December_2011_Tuesday_tagesschau-6843'
         clip_name = self.clip_order_from_int[video_id][clip_id]
         trans_dict = self.annotation[video_id][self.clip_order_from_int[video_id][clip_id]]
-        translation = random.choice(trans_dict['paraphrases'] + [trans_dict['translation']])
-    
+        if self.sign_data_args.get("use_paraphrases", False) or self.split == "train":
+            translation = random.choice(trans_dict['paraphrases'] + [trans_dict['translation']])
+        else:
+            translation = [trans_dict['translation']]
         # Get context: concatenate preceding sentences, 
         # the number of sentences is defined by data_args.context_window_size
         context = []
@@ -244,6 +247,9 @@ def set_same_seed(seed):
 def eval_model(config_yaml):
     with open(config_yaml, 'r') as yaml_file:
         config = yaml.safe_load(yaml_file)
+    
+    checkpoint_num = config['GenerateArguments']['checkpoint_num'] 
+    shutil.copy(config_yaml, os.path.join(config['GenerateArguments']['model_path'], f"generation-{checkpoint_num}.yaml"))
 
     set_same_seed(config['GenerateArguments']['seed'])
 
@@ -288,7 +294,7 @@ def eval_model(config_yaml):
     
     predictions = defaultdict(dict)
     with torch.inference_mode():
-        for i in tqdm.tqdm(range(30)):
+        for i in tqdm.tqdm(range(len(test_dataset))):
         #for i in tqdm.tqdm(range(len(test_dataset))):
             data_dict = test_dataset[i]
             input_ids = data_dict['input_ids']
@@ -329,14 +335,13 @@ def eval_model(config_yaml):
             #print(loss)
             output_ids = output_dict['sequences']
             outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=False)[0].strip()
-            print("reference:", translation)
+            print("reference:", translation[0])
             print("outputs:", outputs)
             print("scores", scores)
             print("output_ids", output_ids)
-            predictions[data_dict['video_id']][data_dict['clip_name']] = outputs
-            import pdb; pdb.set_trace()
-    
-    with open(os.path.join(config['GenerateArguments']['model_path'], "generation.test.json"), 'w') as gen_file:
+            predictions[data_dict['video_id']][data_dict['clip_name']] = {"ref": translation[0], "output": outputs}
+            
+    with open(os.path.join(config['GenerateArguments']['model_path'], f"generation-{config['GenerateArguments']['checkpoint_num']}.test.json"), 'w') as gen_file:
         json.dump(predictions, gen_file)
 
 if __name__ == "__main__":

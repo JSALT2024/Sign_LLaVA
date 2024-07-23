@@ -356,8 +356,11 @@ class SignContextDataset(Dataset):
         # sources: json, 'image': 'train/06December_2011_Tuesday_tagesschau-6843'
         clip_name = self.clip_order_from_int[video_id][clip_id]
         trans_dict = self.annotation[video_id][self.clip_order_from_int[video_id][clip_id]]
-        translation = random.choice(trans_dict['paraphrases'] + [trans_dict['translation']])
-    
+        if self.sign_data_args.get('use_paraphrases', False):
+            translation = random.choice(trans_dict['paraphrases'] + [trans_dict['translation']])
+            print("yeahbut")
+        else:
+            translation = trans_dict['translation']
         # Get context: concatenate preceding sentences, 
         # the number of sentences is defined by data_args.context_window_size
         context = []
@@ -410,8 +413,10 @@ class SignContextDataset(Dataset):
 
             for vi in eval(f"self.{input_type}[k]").keys():
                 for ci in eval(f"self.{input_type}[k][vi]").keys():
-                    clip_id = self.clip_order_to_int[vi][ci]
-                    h5_video_clip.add((vi, clip_id))
+                    if vi in self.clip_order_to_int:
+                        if ci in self.clip_order_to_int[vi]:
+                            clip_id = self.clip_order_to_int[vi][ci]
+                            h5_video_clip.add((vi, clip_id))
         return h5_video_clip
     
 

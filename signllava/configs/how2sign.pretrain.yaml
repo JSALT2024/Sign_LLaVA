@@ -76,5 +76,5 @@ SignModelArguments:
       dim: 384
       projector_type: mlp2x_gelu
     pose: 
-      dim: 224
+      dim: 208
       projector_type: mlp2x_gelu

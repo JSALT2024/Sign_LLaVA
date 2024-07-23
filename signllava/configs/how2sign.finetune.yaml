@@ -66,7 +66,7 @@ SignDataArguments:
       dev: pose/metadata_pose.dev.json
 SignModelArguments:
   projectors:
-    pretrained_projector_ckpt: signllava/checkpoints/how2sign_llama3_8b_nocontext_nopara_pose_pretrain/checkpoint-300/global_step300/mp_rank_00_model_states.pt
+    pretrained_projector_ckpt: signllava/checkpoints/how2sign_llama3_8b_nocontext_nopara_pose_pretrain/checkpoint-900/global_step900/mp_rank_00_model_states.pt
     sign2vec: 
       dim: 768
       projector_type: mlp2x_gelu
@@ -77,5 +77,5 @@ SignModelArguments:
       dim: 384
       projector_type: mlp2x_gelu
     pose: 
-      dim: 224
+      dim: 208
       projector_type: mlp2x_gelu

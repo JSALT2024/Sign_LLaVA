@@ -341,7 +341,7 @@ def eval_model(config_yaml):
             print("output_ids", output_ids)
             predictions[data_dict['video_id']][data_dict['clip_name']] = {"ref": translation[0], "output": outputs}
             
-    with open(os.path.join(config['GenerateArguments']['model_path'], f"generation-{config['GenerateArguments']['checkpoint_num']}.test.debug.json"), 'w') as gen_file:
+    with open(os.path.join(config['GenerateArguments']['model_path'], f"generation-{checkpoint_num}.test.debug.json"), 'w') as gen_file:
         json.dump(predictions, gen_file)
 
 if __name__ == "__main__":

@@ -336,8 +336,10 @@ class SignContextDataset(Dataset):
         # sources: json, 'image': 'train/06December_2011_Tuesday_tagesschau-6843'
         clip_name = self.clip_order_from_int[video_id][clip_id]
         trans_dict = self.annotation[video_id][self.clip_order_from_int[video_id][clip_id]]
-        translation = random.choice(trans_dict['paraphrases'] + [trans_dict['translation']])
-    
+        if self.sign_data_args.get('use_paraphrases', False):
+            translation = random.choice(trans_dict['paraphrases'] + [trans_dict['translation']])
+        else:
+            translation = trans_dict['translation']
         # Get context: concatenate preceding sentences, 
         # the number of sentences is defined by data_args.context_window_size
         context = []
@@ -614,6 +616,7 @@ def train(attn_implementation=None):
 
     data_module = make_supervised_data_module(tokenizer=tokenizer,
                                               sign_data_args=sign_data_args)
+    
     trainer = LLaVATrainer(model=model,
                     tokenizer=tokenizer,
                     args=training_args,

@@ -378,10 +378,11 @@ class SignContextDataset(Dataset):
             if eval(f"self.{input_type}") is not None:
                 shard = self.h5shard[self.split][input_type][video_id]
                 vf = torch.tensor(numpy.array(eval(f"self.{input_type}")[shard][video_id][clip_name]))
+                # do augmentation
                 if sampled_task == "is_reversed" and response == "yes":
                     vf = vf.flip(0)
                 visual_features[input_type] = vf
-        
+            
         src['conversations'] = [{'from': 'human', 
                 'value':video_token+'\n'+text_prompt},
                 {'from': 'gpt',
@@ -464,7 +465,8 @@ class SignContextDataset(Dataset):
                 num_keywords = random.randint(2, self.sign_multi_task_args['multi_word_present']['max_num_words'])
                 chosen_keywords = []
                 responses = []
-                num_positive_keywords = random.randint(0, min(len(keywords), num_keywords))
+                #num_positive_keywords = random.randint(0, min(len(keywords), num_keywords))
+                num_positive_keywords = min(len(keywords), int(num_keywords/2))
                 num_negative_keywords = num_keywords - num_positive_keywords
                 if num_positive_keywords > 0:
                     positive_keywords = random.sample(keywords, num_positive_keywords)

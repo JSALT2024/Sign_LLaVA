@@ -4,6 +4,7 @@ ModelArguments:
   tune_mm_mlp_adapter: True
 TrainingArguments:
   output_dir: signllava/checkpoints/how2sign_llama3_8b_nocontext_nopara_pose_finetune
+  run_name: how2sign_finetune
   model_max_length: 2048
   bf16: True
   #per_device_train_batch_size: 1
@@ -25,6 +26,7 @@ TrainingArguments:
   warmup_ratio: 0.03
   dataloader_num_workers: 4
   learning_rate: 0.00002
+  label_smoothing_factor: 0.1
   lr_scheduler_type: cosine
   gradient_checkpointing: True
   double_quant: True # Compress the quantization statistics through double quantization.
@@ -45,8 +47,8 @@ SignDataArguments:
   prelude_window_size: 0 #number of sentences at the beginning of the discourse 
   data_dir: /export/fs06/xzhan138/Sign_LLaVA/signllava/data/How2Sign
   annotation_path:
-    train: annotation.train.json
-    dev: annotation.dev.json
+    train: H2S.annotations.train.json
+    dev: H2S.annotations.dev.json
   visual_features:
     sign2vec:
       enable_input: False
@@ -58,8 +60,8 @@ SignDataArguments:
       dev: mae/metadata_mae.dev.json
     dino:
       enable_input: False
-      train: dino/metadata_dino.train.json
-      dev: dino/metadata_dino.dev.json
+      train: dino/H2S.dino.train.json
+      dev: dino/H2S.dino.dev.json
     pose:
       enable_input: True
       train: pose/metadata_pose.train.json

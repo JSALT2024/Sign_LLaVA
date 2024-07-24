@@ -287,15 +287,26 @@ def eval_model(config_yaml):
         "top_p": config['GenerateArguments']['top_p'],
         "num_beams": config['GenerateArguments']['num_beams'],
         "min_length": config['GenerateArguments']['min_length'],
-        "do_sample": config['GenerateArguments']['do_sample']
+        "do_sample": config['GenerateArguments']['do_sample'],
+        "remove_invalid_values": config['GenerateArguments']['remove_invalid_values'],
         }
+    '''
+    - greedy decoding if num_beams=1 and do_sample=False
+    - contrastive search if penalty_alpha>0 and top_k>1
+    - multinomial sampling if num_beams=1 and do_sample=True
+    - beam-search decoding if num_beams>1 and do_sample=False
+    - beam-search multinomial sampling if num_beams>1 and do_sample=True
+    - diverse beam-search decoding if num_beams>1 and num_beam_groups>1
+    - constrained beam-search decoding if constraints!=None or force_words_ids!=None
+    - assisted decoding if assistant_model or prompt_lookup_num_tokens is passed to .generate()
+    '''
 
     torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
     
     predictions = defaultdict(dict)
     with torch.inference_mode():
-        for i in tqdm.tqdm(range(len(test_dataset))):
         #for i in tqdm.tqdm(range(len(test_dataset))):
+        for i in tqdm.tqdm(range(50)):
             data_dict = test_dataset[i]
             input_ids = data_dict['input_ids']
             labels = data_dict['labels']
@@ -334,19 +345,21 @@ def eval_model(config_yaml):
             #loss = cre(scores, labels.to(dtype))
             #print(loss)
             output_ids = output_dict['sequences']
-            outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=False)[0].strip()
-            print("reference:", translation[0])
-            print("outputs:", outputs)
-            print("scores", scores)
-            print("output_ids", output_ids)
+            outputs = tokenizer.batch_decode(output_ids, 
+                skip_special_tokens=config['GenerateArguments']['skip_special_tokens'])[0].strip()
+            if config['GenerateArguments']['do_verbose']:
+                print("reference:", translation[0])
+                print("outputs:", outputs)
+                print("scores", scores)
+                print("output_ids", output_ids)
             predictions[data_dict['video_id']][data_dict['clip_name']] = {"ref": translation[0], "output": outputs}
             
-    with open(os.path.join(config['GenerateArguments']['model_path'], f"generation-{checkpoint_num}.test.debug.json"), 'w') as gen_file:
+    with open(os.path.join(config['GenerateArguments']['model_path'], config['GenerateArguments']['generate_des']), 'w') as gen_file:
         json.dump(predictions, gen_file)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--yaml_args", type=str, default="signllava/configs/eval.yaml")
+    parser.add_argument("--yaml_args", type=str, default="signllava/configs/generate.yaml")
     args = parser.parse_args()
 
     eval_model(args.yaml_args)

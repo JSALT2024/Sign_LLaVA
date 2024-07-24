@@ -56,6 +56,9 @@ class SignLlavaLlamaForCausalLM(LlamaForCausalLM, SignLlavaForCausalLM):
     def get_model(self):
         return self.model
 
+    def _get_name(self):
+        return 'llama'
+
     def forward(
         self,
         input_ids: torch.LongTensor = None,

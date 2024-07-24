@@ -8,9 +8,12 @@ GenerateArguments:
   top_p: 1
   min_length: 10
   temperature: 0.1
-  do_sample: True # otherwise use greedy decoding
-  num_beams: 1
+  do_sample: False # otherwise use greedy decoding, if True, use multinomial sampling
+  skip_special_tokens: True
+  num_beams: 5
   max_new_tokens: 512
+  do_verbose: True
+  remove_invalid_values: False
   seed: 42
   bf16: True
 LoraArguments:
@@ -29,7 +32,7 @@ SignDataArguments:
   prelude_window_size: 0 #number of sentences at the beginning of the discourse 
   data_dir: /export/fs06/xzhan138/Sign_LLaVA/signllava/data/How2Sign/
   annotation_path:
-    test: annotation.test.json
+    test: H2S.annotations.test.json
   visual_features:
     sign2vec:
       enable_input: True

@@ -69,6 +69,34 @@ Find the location where the `transformers` package is installed in your `llava` 
     ![deepspeed.py](images/load_ckpt.png)
     This enables loading a model `state_dict` that contains only part of the parameters of the model. 
     During **pretraining**, when resuming training from a checkpoint, this allows to load only the `projector` weights.
+3. In `${transformers_path}/trainer.py`, around line *2791*, in the `compute_loss` function, change `labels = inputs.pop("labels")` to `labels = inputs["labels"]` **and** add this line: `labels = torch.nn.functional.pad(labels,(outputs.logits.shape[1]-labels.shape[1], 0), 'constant', labels[0][0])` before `if model_name in MODEL_FOR_CAUSAL_LM_MAPPING_NAMES.values()`:
+    ```
+    def compute_loss(self, model, inputs, return_outputs=False):
+        """
+        How the loss is computed by Trainer. By default, all models return the loss in the first element.
+
+        Subclass and override for custom behavior.
+        """
+        if self.label_smoother is not None and "labels" in inputs:
+            ######Change this line######
+            #labels = inputs.pop("labels")
+            labels = inputs["labels"]
+            ######Change this line######
+        else:
+            labels = None
+        outputs = model(**inputs)
+        ...
+        ...
+        ...
+        ######Add this line########
+        labels = torch.nn.functional.pad(labels,(outputs.logits.shape[1]-labels.shape[1], 0), 'constant', labels[0][0])
+        ######Add this line########
+        if model_name in MODEL_FOR_CAUSAL_LM_MAPPING_NAMES.values():
+            loss = self.label_smoother(outputs, labels, shift_labels=True)
+        else:
+            loss = self.label_smoother(outputs, labels)
+    ```
+    If label smoothing is turned on with `label_smoothing_factor=0.1`, the original code would throw an error.
 # Pretraining
 1. Configuration file: 
 ```
@@ -97,4 +125,8 @@ bash signllava/scripts/finetune.sh
 bits: 4
 lora_enable: True
 pretrained_projector_ckpt: ${checkpoint_from_pretraining}/mp_rank_00_model_states.pt
+```
+3. Run generation:
+```
+bash signllava/scripts/generate.sh
 ```

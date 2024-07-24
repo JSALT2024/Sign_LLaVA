@@ -73,6 +73,8 @@ class TrainingArguments(transformers.TrainingArguments):
     freeze_mm_mlp_adapter: bool = field(default=False)
     mpt_attn_impl: Optional[str] = field(default="triton")
     resume_from_checkpoint: bool = field(default=False)
+    run_name: Optional[str] = field(default=None)
+    label_smoothing_factor: Optional[float] = field(default=0.1)
     model_max_length: int = field(
         default=512,
         metadata={
@@ -567,7 +569,6 @@ def train(attn_implementation=None):
         padding_side="right",
         use_fast=False,
     )
-
     if tokenizer.unk_token is None:
         tokenizer.add_special_tokens({"unk_token":"<unk>"})
     tokenizer.pad_token = tokenizer.unk_token

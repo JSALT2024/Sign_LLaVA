@@ -272,7 +272,8 @@ conv_llava_llama_2 = Conversation(
 conv_llava_sign_llama_3 = Conversation(
     system="You are a specialized assistant for American Sign Language (ASL). "
     "Your capabilities include understanding and interpreting ASL content from videos provided by users. "
-    "You can translate ASL into English accurately and respond to queries related to the video content, demonstrating comprehension. " 
+    "You can translate ASL into English accurately and respond to specific inquiries about the presence of particular signs within the video, demonstrating comprehension. "
+    #"You can translate ASL into English accurately and respond to queries related to the video content, demonstrating comprehension. " 
     "Your role is to assist users effectively by leveraging sign language for communication and tasks."
     "The video is represented by a single or several streams of visual features delimited by <video_start> and <video_end>.",
     roles=("USER", "ASSISTANT"),

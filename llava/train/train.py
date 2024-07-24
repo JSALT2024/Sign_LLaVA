@@ -392,12 +392,12 @@ class SignContextDataset(Dataset):
                 print("--" + h5file) #,k,json_filename,data_dir)
                 exec(f"self.{input_type}[k] = h5py.File(h5file, 'r')")
 
-            for vi in eval(f"self.{input_type}[k]").keys():
-                for ci in eval(f"self.{input_type}[k][vi]").keys():
-                    if vi in self.clip_order_to_int:
-                        if ci in self.clip_order_to_int[vi]:
-                            clip_id = self.clip_order_to_int[vi][ci]
-                            h5_video_clip.add((vi, clip_id))
+                for vi in eval(f"self.{input_type}[k]").keys():
+                    for ci in eval(f"self.{input_type}[k][vi]").keys():
+                        if vi in self.clip_order_to_int:
+                            if ci in self.clip_order_to_int[vi]:
+                                clip_id = self.clip_order_to_int[vi][ci]
+                                h5_video_clip.add((vi, clip_id))
         return h5_video_clip
     
 

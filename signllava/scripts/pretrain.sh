@@ -7,7 +7,7 @@ source scripts/get_gpu_ids.sh
 export CUDA_VISIBLE_DEVICES=$gpu_indices
 echo "Setting CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
 ########### DO NOT CHANGE ###########
-deepspeed --include localhost:${CUDA_ID} --master_port=28315 llava/train/train_xformers.py \
+deepspeed --include localhost:${CUDA_ID} --master_port=28715 llava/train/train_xformers.py \
     --deepspeed ./scripts/zero2.json \
     --gradient_accumulation_steps 1 \
     --yaml_args signllava/configs/pretrain.yaml 

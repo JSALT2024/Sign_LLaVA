@@ -266,12 +266,15 @@ class SignContextDataset(Dataset):
     """Dataset for supervised training for sign language translation with context."""
     def __init__(self, tokenizer: transformers.PreTrainedTokenizer,
                  sign_data_args: dict,
+                 sign_multi_task_args: dict,
                  split: str):
         super(SignContextDataset, self).__init__()
         self.sign_data_args = sign_data_args
+        self.sign_multi_task_args = sign_multi_task_args
         self.tokenizer = tokenizer
         self.split = split
         data_dir = sign_data_args['data_dir']
+        self.tasks = self.get_tasks() # {"translation": 0.4, "one_word_present": 0.2, "multi_word_present": 0.2, "is_reversed": 0.2}
 
         if self.split == "train":
             annotation_path = sign_data_args['annotation_path']['train']
@@ -280,11 +283,22 @@ class SignContextDataset(Dataset):
         elif self.split == "test":
             annotation_path = sign_data_args['annotation_path']['test']
         annotation_path = os.path.join(data_dir, annotation_path)
-        self.annotation = json.load(open(annotation_path, "r")) 
+        self.annotation = json.load(open(annotation_path, "r"))
         # {{video_id: {clip_id: {"translation": ..., "paraphrases": [A, B, C] }}},
         # }
         # self.list_data: i -> (video_id, clip_id)
         self.list_data = [] # [(video_id, clip_id), ...]
+        
+        # build keyword vocabulary if needed
+        if self.split == "train" and ("one_word_present" in self.tasks or "multi_word_present" in self.tasks):
+            self.keyword_vocabulary = {}
+            for video_id in self.annotation:
+                for clip_name in self.annotation[video_id]:
+                    if clip_name != "clip_order":
+                        clip_dict = self.annotation[video_id][clip_name]
+                        keywords = clip_dict['keywords']
+                        if keywords != []:
+                            self.keyword_vocabulary.update({k: 1 for k in keywords})
 
         self.h5shard = defaultdict(lambda: defaultdict(dict))
         self.clip_order_to_int = {}
@@ -337,11 +351,6 @@ class SignContextDataset(Dataset):
         video_id, clip_id = self.list_data[i]
         # sources: json, 'image': 'train/06December_2011_Tuesday_tagesschau-6843'
         clip_name = self.clip_order_from_int[video_id][clip_id]
-        trans_dict = self.annotation[video_id][self.clip_order_from_int[video_id][clip_id]]
-        if self.sign_data_args.get('use_paraphrases', False):
-            translation = random.choice(trans_dict['paraphrases'] + [trans_dict['translation']])
-        else:
-            translation = trans_dict['translation']
         # Get context: concatenate preceding sentences, 
         # the number of sentences is defined by data_args.context_window_size
         context = []
@@ -356,20 +365,27 @@ class SignContextDataset(Dataset):
         for ci in preceding_ids:    
             preceding_clip_name = self.clip_order_from_int[video_id][ci]
             context.append(self.annotation[video_id][preceding_clip_name]['translation'])
+        
+        src = {}
+        src['id'] = "({0},{1})".format(str(video_id), str(clip_id))
+        video_token = DEFAULT_VIDEO_START_TOKEN + DEFAULT_VIDEO_TOKEN + DEFAULT_VIDEO_END_TOKEN
+
+        sampled_task, text_prompt, response = self.get_task_prompt(video_id, clip_name, context)
+
         # get the visual features
         visual_features = {}
         for input_type in INPUT_TYPES:
             if eval(f"self.{input_type}") is not None:
                 shard = self.h5shard[self.split][input_type][video_id]
                 vf = torch.tensor(numpy.array(eval(f"self.{input_type}")[shard][video_id][clip_name]))
+                if sampled_task == "is_reversed" and response == "yes":
+                    vf = vf.flip(0)
                 visual_features[input_type] = vf
-        src = {}
-        src['id'] = "({0},{1})".format(str(video_id), str(clip_id))
-        video_token = DEFAULT_VIDEO_START_TOKEN + DEFAULT_VIDEO_TOKEN + DEFAULT_VIDEO_END_TOKEN
+        
         src['conversations'] = [{'from': 'human', 
-                'value':video_token+'\n'+PROMPT.replace('<context>', ' '.join(context))},
+                'value':video_token+'\n'+text_prompt},
                 {'from': 'gpt',
-                'value':translation}]
+                'value':response}]
 
         # <video> -> <video_start><video><video_end>
         data_dict = preprocess_llama_3(src, self.tokenizer)
@@ -405,7 +421,81 @@ class SignContextDataset(Dataset):
         annotations_to_delete = set(self.list_data) - h5_video_clip
         for a in annotations_to_delete:
             self.list_data.remove(a)
- 
+    
+    def get_tasks(self):
+        tasks = {}
+        for task in self.sign_multi_task_args:
+            if self.sign_multi_task_args[task]['enable'] and self.sign_multi_task_args[task]['sample_weight'] > 0:
+                tasks[task] = self.sign_multi_task_args[task]['sample_weight']
+        return tasks
+    
+    def get_task_prompt(self, video_id, clip_name, context):
+        # {"translation": 0.4, "one_word_present": 0.2, "multi_word_present": 0.2, "is_reversed": 0.2}
+        clip_dict = self.annotation[video_id][clip_name]
+        if self.split == 'train':
+            sampled_task = random.choices(list(self.tasks.keys()), weights=list(self.tasks.values()), k=1)[0]
+            if sampled_task == "translation": 
+                if self.sign_data_args.get('use_paraphrases', False):
+                    translation = random.choice(clip_dict['paraphrases'] + [clip_dict['translation']])
+                else:
+                    translation = clip_dict['translation']
+                if context == []:
+                    text_prompt = PROMPT_OPTIONS["translate_no_context"]
+                else:
+                    text_prompt = PROMPT_OPTIONS["translate_with_context"].replace('<context>', ' '.join(context))
+                response = translation
+            elif sampled_task == "one_word_present":
+                translation = clip_dict['translation']
+                negative_keyword = random.choice(list(self.keyword_vocabulary.keys()))
+                while negative_keyword in translation:
+                    negative_keyword = random.choice(list(self.keyword_vocabulary.keys()))
+                keywords = clip_dict['keywords']
+                if keywords != []:
+                    positive_keyword = random.choice(keywords)
+                    chosen_keyword = random.choice([positive_keyword, negative_keyword])
+                else:
+                    chosen_keyword = negative_keyword
+                chosen_keyword = chosen_keyword.lower()
+                text_prompt = PROMPT_OPTIONS["one_word_present"].replace('<word>', chosen_keyword)
+                response = "yes" if chosen_keyword in clip_dict['keywords'] else "no"
+            elif sampled_task == "multi_word_present":
+                translation = clip_dict['translation']
+                keywords = clip_dict['keywords']
+                num_keywords = random.randint(2, self.sign_multi_task_args['multi_word_present']['max_num_words'])
+                chosen_keywords = []
+                responses = []
+                num_positive_keywords = random.randint(0, min(len(keywords), num_keywords))
+                num_negative_keywords = num_keywords - num_positive_keywords
+                if num_positive_keywords > 0:
+                    positive_keywords = random.sample(keywords, num_positive_keywords)
+                    for keyword in positive_keywords:
+                        chosen_keywords.append(keyword)
+                        responses.append("yes")
+                if num_negative_keywords > 0:
+                    for _ in range(num_negative_keywords):
+                        negative_keyword = random.choice(list(self.keyword_vocabulary.keys()))
+                        while negative_keyword in translation or negative_keyword in chosen_keywords:
+                            negative_keyword = random.choice(list(self.keyword_vocabulary.keys()))
+                        chosen_keywords.append(negative_keyword)
+                        responses.append("no")
+                #shuffled_responses, shuffled_keywords = zip(*random.sample(list(zip(responses, chosen_keywords)), len(responses)))
+                # order keywords by alphabetical order
+                chosen_keywords = [w.lower() for w in chosen_keywords]
+                sorted_pairs = sorted(zip(responses, chosen_keywords), key=lambda x: x[1])
+                shuffled_responses, shuffled_keywords = zip(*sorted_pairs)
+                text_prompt = PROMPT_OPTIONS["multi_words_present"].replace('<words>', ', '.join(shuffled_keywords))
+                response = ', '.join(shuffled_responses)
+            elif sampled_task == "is_reversed":
+                text_prompt = PROMPT_OPTIONS["is_reversed"]
+                response = "yes" if random.random() < 0.5 else "no"
+        else:
+            response = clip_dict['translation']
+            if context == []:
+                text_prompt = PROMPT_OPTIONS["translate_no_context"]
+            else:
+                text_prompt = PROMPT_OPTIONS["translate_with_context"].replace('<context>', ' '.join(context))
+            sampled_task = "translation"
+        return sampled_task, text_prompt, response
 
 @dataclass
 class DataCollatorForSupervisedDataset(object):
@@ -436,16 +526,19 @@ class DataCollatorForSupervisedDataset(object):
 
 
 def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer,
-                                sign_data_args) -> Dict:
+                                sign_data_args,
+                                sign_multi_task_args) -> Dict:
     """Make dataset and collator for supervised fine-tuning."""
     train_dataset = SignContextDataset(
         tokenizer = tokenizer,
         sign_data_args = sign_data_args,
+        sign_multi_task_args = sign_multi_task_args,
         split = "train"
     )
     dev_dataset = SignContextDataset(
         tokenizer = tokenizer,
         sign_data_args = sign_data_args,
+        sign_multi_task_args = sign_multi_task_args,
         split = "dev"
     )
     data_collator = DataCollatorForSupervisedDataset(tokenizer=tokenizer)
@@ -468,7 +561,6 @@ def set_same_seed(seed):
 
 def train(attn_implementation=None):
     global local_rank
-    global PROMPT
     parser = transformers.HfArgumentParser(
         (ModelArguments, TrainingArguments, ExtraArguments))
     model_args, training_args, extra_args = parser.parse_args_into_dataclasses()
@@ -478,15 +570,10 @@ def train(attn_implementation=None):
         update_arguments(training_args, yaml_config['TrainingArguments'])
     sign_data_args = yaml_config["SignDataArguments"]
     sign_model_args = yaml_config["SignModelArguments"]
+    sign_multi_task_args = yaml_config["SignMultiTaskArguments"]
 
     # set seed
     set_same_seed(training_args.seed)
-
-    # set prompt
-    if sign_data_args["context_window_size"] + sign_data_args["prelude_window_size"] == 0:
-        PROMPT = PROMPT_NO_CONTEXT
-    else:
-        PROMPT = PROMPT_CONTEXT
     
     local_rank = training_args.local_rank
     compute_dtype = (torch.float16 if training_args.fp16 else (torch.bfloat16 if training_args.bf16 else torch.float32))
@@ -616,7 +703,8 @@ def train(attn_implementation=None):
                         module = module.to(torch.bfloat16)
 
     data_module = make_supervised_data_module(tokenizer=tokenizer,
-                                              sign_data_args=sign_data_args)
+                                              sign_data_args=sign_data_args,
+                                              sign_multi_task_args=sign_multi_task_args)
     
     trainer = LLaVATrainer(model=model,
                     tokenizer=tokenizer,
@@ -629,7 +717,7 @@ def train(attn_implementation=None):
 
     # save the language prompt information
     language_prompt = {"system": conversation_lib.default_conversation.system,
-                       "prompt": PROMPT}
+                       "prompt": PROMPT_OPTIONS}
     with open(os.path.join(training_args.output_dir, "prompt.json"), "w") as prompt_json_file:
         json.dump(language_prompt, prompt_json_file)
     if training_args.resume_from_checkpoint and list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):

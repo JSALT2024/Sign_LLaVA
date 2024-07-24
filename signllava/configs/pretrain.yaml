@@ -5,11 +5,10 @@ ModelArguments:
 TrainingArguments:
   output_dir: signllava/checkpoints/pretrain_test
   model_max_length: 2048
-  #report_to: "none"
   bf16: True
-  per_device_train_batch_size: 2
-  per_device_eval_batch_size: 1
-  #auto_find_batch_size: True
+  #per_device_train_batch_size: 2
+  #per_device_eval_batch_size: 1
+  auto_find_batch_size: True
   resume_from_checkpoint: False
   do_train: True
   do_eval: True
@@ -42,12 +41,12 @@ TrainingArguments:
   seed: 42
   data_seed: 42
 SignDataArguments:
-  context_window_size: 0 #number of preceding sentences
-  prelude_window_size: 0 #number of sentences at the beginning of the discourse 
-  data_dir: /export/fs06/xzhan138/Sign_LLaVA/mock_data_multi/
+  context_window_size: 1 #number of preceding sentences
+  prelude_window_size: 1 #number of sentences at the beginning of the discourse 
+  data_dir: /export/fs06/xzhan138/Sign_LLaVA/signllava/data/How2Sign
   annotation_path:
-    train: annotation.train.json
-    dev: annotation.dev.json
+    train: H2S.annotations.train.json
+    dev: H2S.annotations.dev.json
   visual_features:
     sign2vec:
       enable_input: False
@@ -77,5 +76,19 @@ SignModelArguments:
       dim: 384
       projector_type: mlp2x_gelu
     pose: 
-      dim: 32
+      dim: 208
       projector_type: mlp2x_gelu
+SignMultiTaskArguments: # make sure the sum of sample weights is 1
+  translation:
+    enable: True
+    sample_weight: 0.4
+  one_word_present:
+    enable: True
+    sample_weight: 0.2
+  multi_word_present:
+    enable: True
+    sample_weight: 0.2
+    max_num_words: 5
+  is_reversed:
+    enable: True
+    sample_weight: 0.2

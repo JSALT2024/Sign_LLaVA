@@ -29,6 +29,14 @@ VIDEO_PLACEHOLDER = "<video>"
 # "the first visual feature stream: "<video_start>vf1<video_end>"the second visual feature stream: "<video_start>vf2<video_end>
 INPUT_TYPES = ["mae", "sign2vec", "dino", "pose"]
 VIDEO_TOKEN_INDEX = -200
-PROMPT_CONTEXT = "Here are some preceding sentences as context: <context>. Translate the next sentence given by the American Sign Language video into English. "
+#PROMPT_CONTEXT = "Here are some preceding sentences as context: <context>. Translate the next sentence given by the American Sign Language video into English. "
 #PROMPT_CONTEXT = "Given some of the preceding sentences as context, translate the given American Sign Language video into English. "
-PROMPT_NO_CONTEXT = "Translate the given American Sign Language video into English. "
+#PROMPT_NO_CONTEXT = "Translate the given American Sign Language video into English. "
+
+PROMPT_OPTIONS = {
+    "translate_with_context": "Here are some preceding sentences as context: '<context>'. Translate the next sentence given by the American Sign Language video into English. ",
+    "translate_no_context": "Translate the given American Sign Language video into English. ",
+    "one_word_present": "Given the ASL video input, answer the following question with 'yes' or 'no': Is the sign '<word>' present? ",
+    "multi_words_present": "Given the ASL video input, answer the following questions with 'yes' or 'no' for each sign listed, separated by commas: Are the signs '<words>' present?",
+    "is_reversed": "Given the video input, answer the following question with 'yes' or 'no': Is the video presented in reversed temporal order?"
+}

@@ -81,3 +81,17 @@ SignModelArguments:
     pose: 
       dim: 208
       projector_type: mlp2x_gelu
+SignMultiTaskArguments: # make sure the sum of sample weights is 1
+  translation:
+    enable: True
+    sample_weight: 0.4
+  one_word_present:
+    enable: True
+    sample_weight: 0.2
+  multi_word_present:
+    enable: True
+    sample_weight: 0.2
+    max_num_words: 5
+  is_reversed:
+    enable: True
+    sample_weight: 0.2

@@ -126,7 +126,32 @@ bits: 4
 lora_enable: True
 pretrained_projector_ckpt: ${checkpoint_from_pretraining}/mp_rank_00_model_states.pt
 ```
-3. Run generation:
+
+# Run generation
 ```
 bash signllava/scripts/generate.sh
+```
+1. Generate without context
+```
+SignDataArguments:
+    prepared_predicted_context: False 
+    on_the_fly_predicted_context: False
+    context_window_size: 0
+    prelude_window_size: 0
+```
+2. Generate with context
+```
+SignDataArguments:
+    prepared_predicted_context: False 
+    on_the_fly_predicted_context: False
+    context_window_size: 2 # a number greater than 0
+    prelude_window_size: 2 
+```
+3. Generate with predicted context
+```
+SignDataArguments:
+    prepared_predicted_context: False 
+    on_the_fly_predicted_context: True
+    context_window_size: 2 # a number greater than 0
+    prelude_window_size: 2 
 ```

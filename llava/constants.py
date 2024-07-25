@@ -30,8 +30,8 @@ VIDEO_PLACEHOLDER = "<video>"
 INPUT_TYPES = ["mae", "sign2vec", "dino", "pose"]
 VIDEO_TOKEN_INDEX = -200
 #PROMPT_CONTEXT = "Here are some preceding sentences as context: <context>. Translate the next sentence given by the American Sign Language video into English. "
-#PROMPT_CONTEXT = "Given some of the preceding sentences as context, translate the given American Sign Language video into English. "
-#PROMPT_NO_CONTEXT = "Translate the given American Sign Language video into English. "
+PROMPT_CONTEXT = "Given some of the preceding sentences as context, translate the given American Sign Language video into English. "
+PROMPT_NO_CONTEXT = "Translate the given American Sign Language video into English. "
 
 PROMPT_OPTIONS = {
     "translate_with_context": "Here are some preceding sentences as context: '<context>'. Translate the next sentence given by the American Sign Language video into English. ",

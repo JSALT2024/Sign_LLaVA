@@ -27,6 +27,9 @@ import requests
 from io import BytesIO
 import re
 
+global generation
+generation = defaultdict(dict)
+
 def preprocess_llama_3(
     source,
     tokenizer: transformers.PreTrainedTokenizer
@@ -102,13 +105,7 @@ class SignContextDataset(Dataset):
         self.dtype = dtype
         data_dir = sign_data_args['data_dir']
 
-        if self.split == "train":
-            annotation_path = sign_data_args['annotation_path']['train']
-        elif self.split == "dev":
-            annotation_path = sign_data_args['annotation_path']['dev']
-        elif self.split == "test":
-            annotation_path = sign_data_args['annotation_path']['test']
-        annotation_path = os.path.join(data_dir, annotation_path)
+        annotation_path = sign_data_args['annotation_path']
         self.annotation = json.load(open(annotation_path, "r")) 
         # {{video_id: {clip_id: {"translation": ..., "paraphrases": [A, B, C] }}},
         # }
@@ -123,9 +120,8 @@ class SignContextDataset(Dataset):
             self.clip_order_from_int[video_id] =  dict(zip(range(len(co)),co))
             self.clip_order_to_int[video_id] =  dict(zip(co,range(len(co))))
 
-        for video_id, clip_dict in self.annotation.items():
-            for clip_name in clip_dict:
-                if clip_name != "clip_order":
+        for video_id in self.annotation:
+            for clip_name in self.annotation[video_id]['clip_order']:
                     self.list_data.append((video_id, self.clip_order_to_int[video_id][clip_name]))
         for input_type in INPUT_TYPES:
             enable_feature = sign_data_args['visual_features'][input_type]['enable_input']
@@ -167,10 +163,7 @@ class SignContextDataset(Dataset):
         # sources: json, 'image': 'train/06December_2011_Tuesday_tagesschau-6843'
         clip_name = self.clip_order_from_int[video_id][clip_id]
         trans_dict = self.annotation[video_id][self.clip_order_from_int[video_id][clip_id]]
-        if self.sign_data_args.get("use_paraphrases", False) or self.split == "train":
-            translation = random.choice(trans_dict['paraphrases'] + [trans_dict['translation']])
-        else:
-            translation = [trans_dict['translation']]
+        translation = [trans_dict['translation']]
         # Get context: concatenate preceding sentences, 
         # the number of sentences is defined by data_args.context_window_size
         context = []
@@ -184,7 +177,13 @@ class SignContextDataset(Dataset):
             preceding_ids = range(total_num_preceding_sents)
         for ci in preceding_ids:    
             preceding_clip_name = self.clip_order_from_int[video_id][ci]
-            context.append(self.annotation[video_id][preceding_clip_name]['translation'])
+            if self.sign_data_args.get("prepared_predicted_context", False):
+                context.append(self.annotation[video_id][preceding_clip_name]['hypothesis'])
+            elif self.sign_data_args.get("on_the_fly_predicted_context", False):
+                context.append(generation[video_id][preceding_clip_name]['hypothesis'])
+            else:
+                context.append(self.annotation[video_id][preceding_clip_name]['translation'])
+        print(context)
         # get the visual features
         visual_features = {}
         for input_type in INPUT_TYPES:
@@ -224,10 +223,12 @@ class SignContextDataset(Dataset):
                 print("--" + h5file) #,k,json_filename,data_dir)
                 exec(f"self.{input_type}[k] = h5py.File(h5file, 'r')")
 
-            for vi in eval(f"self.{input_type}[k]").keys():
-                for ci in eval(f"self.{input_type}[k][vi]").keys():
-                    clip_id = self.clip_order_to_int[vi][ci]
-                    h5_video_clip.add((vi, clip_id))
+                for vi in eval(f"self.{input_type}[k]").keys():
+                    for ci in eval(f"self.{input_type}[k][vi]").keys():
+                        if vi in self.clip_order_to_int:
+                            if ci in self.clip_order_to_int[vi]:
+                                clip_id = self.clip_order_to_int[vi][ci]
+                                h5_video_clip.add((vi, clip_id))
         return h5_video_clip
 
     def remove_missing_annotation(self, h5_video_clip):
@@ -302,11 +303,18 @@ def eval_model(config_yaml):
     '''
 
     torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+
+    data_dir = sign_data_args['data_dir']
+    annotation_path = sign_data_args['annotation_path']
+    annotation_path = os.path.join(data_dir, annotation_path)
+    annotation = json.load(open(annotation_path, "r"))
     
-    predictions = defaultdict(dict)
+    if config['GenerateArguments']['num_datapoints'] == -1:
+        num_datapoints = len(test_dataset)
+    else:
+        num_datapoints = min(config['GenerateArguments']['num_datapoints'], len(test_dataset))
     with torch.inference_mode():
-        #for i in tqdm.tqdm(range(len(test_dataset))):
-        for i in tqdm.tqdm(range(50)):
+        for i in tqdm.tqdm(range(num_datapoints)):
             data_dict = test_dataset[i]
             input_ids = data_dict['input_ids']
             labels = data_dict['labels']
@@ -333,17 +341,7 @@ def eval_model(config_yaml):
                 bos_token_id = tokenizer.encode("\n\n")[1],
                 **generate_kwargs
             )
-            #import pdb; pdb.set_trace()
-            #labels = labels[0][114:].unsqueeze(0)
-            #cre = torch.nn.CrossEntropyLoss()
-            #import pdb; pdb.set_trace()
             scores = torch.stack(list(output_dict['scores'])).to(dtype).unsqueeze(0).squeeze(2)
-            #vocab_size = 128259
-            #import pdb; pdb.set_trace()
-            #loss = cre(scores.view(-1, vocab_size), labels.to(dtype).view(-1))
-            #import pdb; pdb.set_trace()
-            #loss = cre(scores, labels.to(dtype))
-            #print(loss)
             output_ids = output_dict['sequences']
             outputs = tokenizer.batch_decode(output_ids, 
                 skip_special_tokens=config['GenerateArguments']['skip_special_tokens'])[0].strip()
@@ -352,10 +350,12 @@ def eval_model(config_yaml):
                 print("outputs:", outputs)
                 print("scores", scores)
                 print("output_ids", output_ids)
-            predictions[data_dict['video_id']][data_dict['clip_name']] = {"ref": translation[0], "output": outputs}
+            generation[data_dict['video_id']]['clip_order'] = annotation[data_dict['video_id']]['clip_order']
+            generation[data_dict['video_id']][data_dict['clip_name']] = annotation[data_dict['video_id']][data_dict['clip_name']]
+            generation[data_dict['video_id']][data_dict['clip_name']]['hypothesis'] = outputs
             
     with open(os.path.join(config['GenerateArguments']['model_path'], config['GenerateArguments']['generate_des']), 'w') as gen_file:
-        json.dump(predictions, gen_file)
+        json.dump(generation, gen_file)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

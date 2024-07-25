@@ -3,7 +3,7 @@ ModelArguments:
   version: llava_sign_llama_3
   tune_mm_mlp_adapter: True 
 TrainingArguments:
-  output_dir: signllava/checkpoints/pretrain_test
+  output_dir: signllava/checkpoints/pretrain_how2sign
   model_max_length: 2048
   bf16: True
   #per_device_train_batch_size: 2
@@ -14,16 +14,16 @@ TrainingArguments:
   do_eval: True
   evaluation_strategy: steps
   save_strategy: steps
-  eval_steps: 10
-  save_steps: 10
-  logging_steps: 10
+  eval_steps: 300
+  save_steps: 300
+  logging_steps: 300
+  num_train_epochs: 80
   metric_for_best_model: eval_loss
   load_best_model_at_end: True
-  save_total_limit: 1
+  save_total_limit: 5
   weight_decay: 0.1
-  warmup_ratio: 0.03
-  dataloader_num_workers: 0
-  num_train_epochs: 10
+  warmup_ratio: 0
+  dataloader_num_workers: 4
   learning_rate: 0.002
   label_smoothing_factor: 0.1
   lr_scheduler_type: cosine
@@ -41,12 +41,13 @@ TrainingArguments:
   seed: 42
   data_seed: 42
 SignDataArguments:
-  context_window_size: 1 #number of preceding sentences
-  prelude_window_size: 1 #number of sentences at the beginning of the discourse 
+  use_paraphrases: False
+  context_window_size: 0 #number of preceding sentences
+  prelude_window_size: 0 #number of sentences at the beginning of the discourse 
   data_dir: /export/fs06/xzhan138/Sign_LLaVA/signllava/data/How2Sign
   annotation_path:
-    train: H2S.annotations.train.json
-    dev: H2S.annotations.dev.json
+    train: annotation.train.json
+    dev: annotation.dev.json
   visual_features:
     sign2vec:
       enable_input: False
@@ -73,7 +74,7 @@ SignModelArguments:
       dim: 768
       projector_type: mlp2x_gelu
     dino: 
-      dim: 384
+      dim: 1152
       projector_type: mlp2x_gelu
     pose: 
       dim: 208
@@ -81,14 +82,14 @@ SignModelArguments:
 SignMultiTaskArguments: # make sure the sum of sample weights is 1
   translation:
     enable: True
-    sample_weight: 0.4
+    sample_weight: 1 #0.4
   one_word_present:
-    enable: True
-    sample_weight: 0.2
+    enable: False
+    sample_weight: 0 #0.2
   multi_word_present:
-    enable: True
-    sample_weight: 0.2
-    max_num_words: 5
+    enable: False
+    sample_weight: 0 #0.2
+    max_num_words: 5 
   is_reversed:
-    enable: True
-    sample_weight: 0.2
+    enable: False
+    sample_weight: 0 #0.2

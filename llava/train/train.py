@@ -409,12 +409,12 @@ class SignContextDataset(Dataset):
                 print("--" + h5file) #,k,json_filename,data_dir)
                 exec(f"self.{input_type}[k] = h5py.File(h5file, 'r')")
 
-            for vi in eval(f"self.{input_type}[k]").keys():
-                for ci in eval(f"self.{input_type}[k][vi]").keys():
-                    if vi in self.clip_order_to_int:
-                        if ci in self.clip_order_to_int[vi]:
-                            clip_id = self.clip_order_to_int[vi][ci]
-                            h5_video_clip.add((vi, clip_id))
+                for vi in eval(f"self.{input_type}[k]").keys():
+                    for ci in eval(f"self.{input_type}[k][vi]").keys():
+                        if vi in self.clip_order_to_int:
+                            if ci in self.clip_order_to_int[vi]:
+                                clip_id = self.clip_order_to_int[vi][ci]
+                                h5_video_clip.add((vi, clip_id))
         return h5_video_clip
     
 
@@ -573,6 +573,11 @@ def train(attn_implementation=None):
     sign_data_args = yaml_config["SignDataArguments"]
     sign_model_args = yaml_config["SignModelArguments"]
     sign_multi_task_args = yaml_config["SignMultiTaskArguments"]
+    output_dir = training_args.output_dir
+    if os.environ.get("SLURM_JOB_ID", None) is not None:
+        output_dir += "-" + os.environ["SLURM_JOB_ID"]
+    os.makedirs(output_dir, exist_ok=True)
+    training_args.run_name = output_dir.split('/')[-1]
 
     # set seed
     set_same_seed(training_args.seed)
@@ -713,16 +718,15 @@ def train(attn_implementation=None):
                     args=training_args,
                     **data_module)
     # save the configuration.yaml
-    os.makedirs(training_args.output_dir, exist_ok=True)
-    shutil.copy(extra_args.yaml_args, os.path.join(training_args.output_dir, "config.yaml"))
-    model.config.save_pretrained(training_args.output_dir)
+    shutil.copy(extra_args.yaml_args, os.path.join(output_dir, "config.yaml"))
+    model.config.save_pretrained(output_dir)
 
     # save the language prompt information
     language_prompt = {"system": conversation_lib.default_conversation.system,
                        "prompt": PROMPT_OPTIONS}
-    with open(os.path.join(training_args.output_dir, "prompt.json"), "w") as prompt_json_file:
+    with open(os.path.join(output_dir, "prompt.json"), "w") as prompt_json_file:
         json.dump(language_prompt, prompt_json_file)
-    if training_args.resume_from_checkpoint and list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
+    if training_args.resume_from_checkpoint and list(pathlib.Path(output_dir).glob("checkpoint-*")):
         trainer.train(resume_from_checkpoint=True)
     else:
         trainer.train()

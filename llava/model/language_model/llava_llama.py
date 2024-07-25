@@ -68,6 +68,7 @@ class SignLlavaLlamaForCausalLM(LlamaForCausalLM, SignLlavaForCausalLM):
         inputs_embeds: Optional[torch.FloatTensor] = None,
         labels: Optional[torch.LongTensor] = None,
         use_cache: Optional[bool] = None,
+        cache_position: Optional[torch.Tensor] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         visual_features: list = [],

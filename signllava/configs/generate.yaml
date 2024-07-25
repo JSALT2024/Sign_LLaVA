@@ -1,19 +1,22 @@
 
 GenerateArguments:
   #model_path: signllava/checkpoints/how2sign_llama3_8b_nocontext_pose_pretrain/
-  model_path: signllava/checkpoints/llama3_8b_pre_400ep_mae_dino_sign2vec
+  model_path: signllava/checkpoints/pretrain_how2sign
   checkpoint_num: 3950
-  generate_des: generation-3950.beam5.train_sub.json
+  num_datapoints: 500 # -1 for all
+  generate_des: generation.nocontext.json
+  #generate_des: generation.prepared_predicted_context.json
+  #generate_des: generation.on_the_fly_predicted_context.json
   model_base: meta-llama/Meta-Llama-3-8B-Instruct
   conv_mode: llava_sign_llama_3
   top_p: 1
-  min_length: 10
+  min_length: 1 
   temperature: 0.1
   do_sample: False # otherwise use greedy decoding
   skip_special_tokens: True
   num_beams: 5
-  remove_invalid_values: False
-  max_new_tokens: 512
+  remove_invalid_values: True
+  max_new_tokens: 200
   do_verbose: False
   seed: 42
   bf16: True
@@ -28,26 +31,26 @@ LoraArguments:
   lora_weight_path: ""
   lora_bias: "none"
 SignDataArguments:
-  use_paraphrases: False
+  prepared_predicted_context: False 
+  on_the_fly_predicted_context: False
   context_window_size: 0 #number of preceding sentences
   prelude_window_size: 0 #number of sentences at the beginning of the discourse 
   data_dir: /export/fs06/xzhan138/Sign_LLaVA/signllava/data/How2Sign/
-  annotation_path:
-    test: H2S.annotations.train.json
+  annotation_path: /export/fs06/xzhan138/Sign_LLaVA/signllava/data/How2Sign/annotation.train.json
+  #annotation_path: /export/fs06/xzhan138/Sign_LLaVA/signllava/checkpoints/pretrain_how2sign/generation.nocontext.json
   visual_features:
     sign2vec:
-      enable_input: True
+      enable_input: False
       test: sign2vec/metadata_sign2vec.train.json
     mae:
-      enable_input: True
+      enable_input: False
       test: mae/metadata_mae.train.json
     dino:
-      enable_input: True
-      test: dino/H2S.dino.train.json
-    pose:
       enable_input: False
-      test: tomas/keypoints/H2S.keypoints.train.json
-      #test: pose/metadata_pose.dev.json
+      test: dino/metadata_dino.train.json
+    pose:
+      enable_input: True
+      test: pose/metadata_pose.train.json
 SignModelArguments:
   projectors:
     sign2vec: 

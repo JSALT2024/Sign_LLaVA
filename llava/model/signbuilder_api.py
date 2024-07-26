@@ -9,7 +9,7 @@ from llava.model import *
 from llava.constants import DEFAULT_VIDEO_START_TOKEN, DEFAULT_VIDEO_END_TOKEN, DEFAULT_VIDEO_TOKEN
 
 
-def load_pretrained_model(config, use_flash_attn=False, device_map="auto", device="cuda"):
+def load_pretrained_model(config, model_path, use_flash_attn=False, device_map="auto", device="cuda"):
     kwargs = {"device_map": device_map}
 
     if device != "cuda":

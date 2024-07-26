@@ -69,7 +69,7 @@ SignModelArguments:
   projectors:
     sign2vec: 
       dim: 768
-      projector_type: mlp2x_gelu
+      projector_type: mlp2x_gelu # linear
     mae: 
       dim: 768
       projector_type: mlp2x_gelu

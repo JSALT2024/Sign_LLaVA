@@ -84,7 +84,8 @@ class SignLlavaLlamaForCausalLM(LlamaForCausalLM, SignLlavaForCausalLM):
                 attention_mask,
                 past_key_values,
                 inputs_embeds,
-                labels
+                labels,
+                _
             ) = self.prepare_inputs_and_labels(
                 input_ids,
                 position_ids,
@@ -117,6 +118,7 @@ class SignLlavaLlamaForCausalLM(LlamaForCausalLM, SignLlavaForCausalLM):
         labels: Optional[torch.LongTensor] = None,
         visual_features: list = [],
         video_sep_ids: torch.LongTensor = None,
+        visual_embeddings_out: Optional[dict] = None,
         **kwargs,
     ) -> Union[GenerateOutput, torch.LongTensor]:
         position_ids = kwargs.pop("position_ids", None)
@@ -128,7 +130,8 @@ class SignLlavaLlamaForCausalLM(LlamaForCausalLM, SignLlavaForCausalLM):
                 attention_mask,
                 past_key_values,
                 inputs_embeds,
-                labels
+                labels,
+                visual_embeddings
             ) = self.prepare_inputs_and_labels(
                 inputs,
                 position_ids,
@@ -138,6 +141,8 @@ class SignLlavaLlamaForCausalLM(LlamaForCausalLM, SignLlavaForCausalLM):
                 video_sep_ids,
                 visual_features
             )
+            if visual_embeddings_out is not None:
+                visual_embeddings_out.update(visual_embeddings)
         else:
             inputs_embeds = self.get_model().embed_tokens(inputs)
         return super().generate(

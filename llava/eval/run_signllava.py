@@ -183,7 +183,6 @@ class SignContextDataset(Dataset):
                 context.append(generation[video_id][preceding_clip_name]['hypothesis'])
             else:
                 context.append(self.annotation[video_id][preceding_clip_name]['translation'])
-        print(context)
         # get the visual features
         visual_features = {}
         for input_type in INPUT_TYPES:
@@ -265,8 +264,6 @@ def eval_model(config_yaml):
     tokenizer.padding_side = "right"
     video_token = DEFAULT_VIDEO_START_TOKEN + DEFAULT_VIDEO_TOKEN + DEFAULT_VIDEO_END_TOKEN
 
-    conv_mode = config['GenerateArguments']['conv_mode']
-
     # set prompt
     sign_data_args = config['SignDataArguments']
     if sign_data_args["context_window_size"] + sign_data_args["prelude_window_size"] == 0:
@@ -302,7 +299,7 @@ def eval_model(config_yaml):
     - assisted decoding if assistant_model or prompt_lookup_num_tokens is passed to .generate()
     '''
 
-    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+    #torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 
     data_dir = sign_data_args['data_dir']
     annotation_path = sign_data_args['annotation_path']

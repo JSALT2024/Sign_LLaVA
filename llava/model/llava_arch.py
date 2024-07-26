@@ -36,7 +36,7 @@ class SignLlavaProjector: # adapted from LlavaMetaModel
             projector_name = "{}_projector".format(input_type)
             projector_args = projector_configs[input_type]
             if sign_data_args['visual_features'][input_type]["enable_input"]:
-                projector_type = getattr(projector_args, 'mm_projector_type', 'linear')
+                projector_type = projector_args['projector_type']
                 mm_hidden_size = projector_args['dim']
                 hidden_size = self.config.hidden_size
                 exec(f"self.{projector_name}=build_vision_projector(projector_type, mm_hidden_size, hidden_size)")
@@ -82,9 +82,8 @@ class SignLlavaForCausalLM(ABC): # adapted from LlavaMetaForCausalLM(ABC)
         # Step 3. Get embeddings.
         # Step 4. Truncate the input to tokenizer_model_max_length
         # Step 5. Pad the input to the same length in a batch.
-
         if visual_features == [] or input_ids.shape[1] == 1:
-            return input_ids, position_ids, attention_mask, past_key_values, None, labels
+            return input_ids, position_ids, attention_mask, past_key_values, None, labels, None
 
         # Step 1. Get projected visual features.
         projected_visual_features = []
@@ -221,7 +220,7 @@ class SignLlavaForCausalLM(ABC): # adapted from LlavaMetaForCausalLM(ABC)
 
         if _position_ids is None:
             position_ids = None
-        return None, position_ids, attention_mask, past_key_values, new_input_embeds, new_labels_padded
+        return None, position_ids, attention_mask, past_key_values, new_input_embeds, new_labels_padded, projected_visual_features[0]
 
     def initialize_vision_tokenizer(self, model_args, tokenizer):
         num_new_tokens = tokenizer.add_tokens([DEFAULT_VIDEO_START_TOKEN, DEFAULT_VIDEO_END_TOKEN], special_tokens=True)

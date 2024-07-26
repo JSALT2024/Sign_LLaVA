@@ -3,7 +3,7 @@ ModelArguments:
   version: llava_sign_llama_3
   tune_mm_mlp_adapter: True 
 TrainingArguments:
-  output_dir: signllava/checkpoints/pretrain_how2sign
+  output_dir: signllava/checkpoints/pretrain_test_multitask
   model_max_length: 2048
   bf16: True
   #per_device_train_batch_size: 2
@@ -82,14 +82,14 @@ SignModelArguments:
 SignMultiTaskArguments: # make sure the sum of sample weights is 1
   translation:
     enable: True
-    sample_weight: 1 #0.4
+    sample_weight: 0.4 #0.4
   one_word_present:
-    enable: False
-    sample_weight: 0 #0.2
+    enable: True
+    sample_weight: 0.2 #0.2
   multi_word_present:
-    enable: False
-    sample_weight: 0 #0.2
+    enable: True
+    sample_weight: 0.2 #0.2
     max_num_words: 5 
   is_reversed:
-    enable: False
-    sample_weight: 0 #0.2
+    enable: True
+    sample_weight: 0.2 #0.2

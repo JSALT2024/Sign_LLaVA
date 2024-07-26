@@ -5,7 +5,7 @@ import numpy as np
 
 def test_sign_llava():
     print("Loading the Sign LLaVA model...")
-    our_model = SignLlava.load_from_checkpoint("/export/fs06/xzhan138/Sign_LLaVA/signllava/checkpoints/llama3_8b_pre_400ep_mae_dino_sign2vec")
+    our_model = SignLlava.load_from_checkpoint("/export/fs06/xzhan138/Sign_LLaVA/signllava/checkpoints/test_ckpt_July_26_2024_11am")
     print("Model loaded successfully!")
     input_data = SignLlavaInput(
         sign2vec_features=np.zeros(shape=(150, 768), dtype=np.float32),

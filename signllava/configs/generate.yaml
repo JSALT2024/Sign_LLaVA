@@ -4,6 +4,7 @@ GenerateArguments:
   model_path: signllava/checkpoints/pretrain_how2sign
   checkpoint_num: 3950
   num_datapoints: 500 # -1 for all
+  task: translation # translation, one_word_present, multi_word_present, is_reversed
   generate_des: generation.nocontext.json
   #generate_des: generation.prepared_predicted_context.json
   #generate_des: generation.on_the_fly_predicted_context.json

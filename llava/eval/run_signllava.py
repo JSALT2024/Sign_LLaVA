@@ -193,6 +193,7 @@ class SignContextDataset(Dataset):
         src = {}
         src['id'] = "({0},{1})".format(str(video_id), str(clip_id))
         video_token = DEFAULT_VIDEO_START_TOKEN + DEFAULT_VIDEO_TOKEN + DEFAULT_VIDEO_END_TOKEN
+        
         src['conversations'] = [{'from': 'human', 
                 'value':video_token+'\n'+self.prompt.replace('<context>', ' '.join(context))},
                 {'from': 'gpt',

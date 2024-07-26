@@ -578,6 +578,7 @@ def train(attn_implementation=None):
         output_dir += "-" + os.environ["SLURM_JOB_ID"]
     os.makedirs(output_dir, exist_ok=True)
     training_args.run_name = output_dir.split('/')[-1]
+    training_args.output_dir = output_dir
 
     # set seed
     set_same_seed(training_args.seed)

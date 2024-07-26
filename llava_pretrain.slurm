@@ -50,6 +50,11 @@ mkdir -p ${LOCALDIR}/output
 mkdir -p ${OUTPUT_DIR}/${SLURM_JOB_ID}
 cp -r ${DATA_DIR} ${LOCALDIR}
 
+
+mv ${LOCALDIR}/How2Sign/sign2vec/sign2vec.train.0.h5 ${LOCALDIR}/How2Sign/sign2vec/sign2vec.train.train.h5
+mv ${LOCALDIR}/How2Sign/sign2vec/sign2vec.dev.0.h5 ${LOCALDIR}/How2Sign/sign2vec/sign2vec.dev.dev.h5
+mv ${LOCALDIR}/How2Sign/sign2vec/sign2vec.test.0.h5 ${LOCALDIR}/How2Sign/sign2vec/sign2vec.test.test.h5
+
 ls ${LOCALDIR}
 
 echo "Finish copying to the local scratch."

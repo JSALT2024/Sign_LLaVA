@@ -47,7 +47,6 @@ def load_pretrained_model(config, use_flash_attn=False, device_map="auto", devic
         print('Loading LLaVA from base model...')
         model = SignLlavaLlamaForCausalLM.from_pretrained(
                 model_base,
-                local_files_only=True,
                 low_cpu_mem_usage=True, 
                 config=lora_cfg_pretrained, 
                 sign_model_args=config['SignModelArguments'],
@@ -85,7 +84,6 @@ def load_pretrained_model(config, use_flash_attn=False, device_map="auto", devic
         cfg_pretrained = AutoConfig.from_pretrained(model_path)
         model = SignLlavaLlamaForCausalLM.from_pretrained(
                 model_base,
-                local_files_only=True,
                 low_cpu_mem_usage=True, 
                 sign_model_args=config['SignModelArguments'],
                 sign_data_args=config['SignDataArguments'],

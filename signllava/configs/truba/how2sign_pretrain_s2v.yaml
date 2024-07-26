@@ -42,7 +42,7 @@ TrainingArguments:
 SignDataArguments:
   context_window_size: 0 #number of preceding sentences
   prelude_window_size: 0 #number of sentences at the beginning of the discourse 
-  data_dir: /localscratch/msaraclar/signllava/How2Sign
+  data_dir: /localscratch/msaraclar/signllava_s2v/How2Sign
   annotation_path:
     train: h2s.annotations.train.json
     dev: h2s.annotations.dev.json

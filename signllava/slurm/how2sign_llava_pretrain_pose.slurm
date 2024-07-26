@@ -28,7 +28,7 @@ which python
 # # Change the directory to the sign2vec repository
 # cd /truba/scratch/msaraclar/sign2vec
 export DATA_DIR="/truba/home/msaraclar/data/How2Sign"
-export LOCALDIR="/localscratch/msaraclar/signllava_0"
+export LOCALDIR="/localscratch/msaraclar/signllava_pose"
 export OUTPUT_DIR="/truba/scratch/msaraclar/models"
 
 echo "local directory: "

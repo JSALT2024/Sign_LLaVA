@@ -13,7 +13,7 @@
 import os
 import numpy as np
 import random
-from typing import Optional, Any
+from typing import Optional, Any, List
 from collections import defaultdict
 import dataclasses
 import yaml
@@ -361,4 +361,22 @@ class SignLlava:
             sign2vec_embeddings=visual_embeddings_out['sign2vec'].cpu().data.to(torch.float32).numpy(),
             mae_embeddings=visual_embeddings_out['mae'].cpu().data.to(torch.float32).numpy(),
             dino_embeddings=visual_embeddings_out['dino'].cpu().data.to(torch.float32).numpy()
+        )
+    
+    def get_embedding_layer_weights(self) -> np.ndarray:
+        """
+        Returns a numpy array of shape [TOKEN_COUNT, EMBEDDING_DIMENSION]
+        of type float32
+        """
+        tensor = self.model.get_model().embed_tokens.weight
+        return tensor.cpu().to(torch.float32).detach().numpy()
+    
+    def get_all_tokens(self) -> List[str]:
+        """
+        Returns all the tokens of the tokenizer in a list,
+        these correspond to the rows in the embedding layer weights.
+        """
+        token_count = self.model.get_model().embed_tokens.weight.shape[0]
+        return self.tokenizer.convert_ids_to_tokens(
+            list(range(token_count))
         )

@@ -112,25 +112,35 @@ class SignLlavaInput:
     If chatting-history or system prompt is to be added, this field should get
     a dedicated class (e.g. PromptData).
     """
+
     generation_config: GenerationConfig
+    """
+    Config that controls the details of the generation process,
+    such as the temperature
+    """
 
     def __post_init__(self):
         if self.sign2vec_features is not None:
             assert str(self.sign2vec_features.dtype) == "float32"
             assert len(self.sign2vec_features.shape) == 2
-            assert self.sign2vec_features.shape[0] > 0
             assert self.sign2vec_features.shape[1] == 768
         if self.mae_features is not None:
             assert str(self.mae_features.dtype) == "float32"
             assert len(self.mae_features.shape) == 2
-            assert self.mae_features.shape[0] > 0
             assert self.mae_features.shape[1] == 768
         if self.dino_features is not None:
             assert str(self.dino_features.dtype) == "float32"
             assert len(self.dino_features.shape) == 2
-            assert self.dino_features.shape[0] > 0
             assert self.dino_features.shape[1] == 1152
         assert type(self.prompt) is str
+    
+    def replace_missing_modalities_with_empty_tensors(self):
+        if self.sign2vec_features is None:
+            self.sign2vec_features = np.zeros(shape=(0, 768), dtype=np.float32)
+        if self.mae_features is None:
+            self.mae_features = np.zeros(shape=(0, 768), dtype=np.float32)
+        if self.dino_features is None:
+            self.dino_features = np.zeros(shape=(0, 1152), dtype=np.float32)
 
 
 @dataclasses.dataclass
@@ -173,15 +183,12 @@ class SignLlavaOutput:
         if self.sign2vec_embeddings is not None:
             assert str(self.sign2vec_embeddings.dtype) == "float32"
             assert len(self.sign2vec_embeddings.shape) == 2
-            assert self.sign2vec_embeddings.shape[0] > 0
         if self.mae_embeddings is not None:
             assert str(self.mae_embeddings.dtype) == "float32"
             assert len(self.mae_embeddings.shape) == 2
-            assert self.mae_embeddings.shape[0] > 0
         if self.dino_embeddings is not None:
             assert str(self.dino_embeddings.dtype) == "float32"
             assert len(self.dino_embeddings.shape) == 2
-            assert self.dino_embeddings.shape[0] > 0
         # NOTE: the embedding dimensions depend on the llama model chosen,
         # they may be 4K or 8K
 
@@ -294,6 +301,7 @@ class SignLlava:
         set_seed(seed)
     
     def preprocess_input(self, input_data: SignLlavaInput):
+        input_data.replace_missing_modalities_with_empty_tensors()
         visual_features = {}
         for input_type in INPUT_TYPES:
             if input_type!="pose" and eval(f"input_data.{input_type}_features") is not None:

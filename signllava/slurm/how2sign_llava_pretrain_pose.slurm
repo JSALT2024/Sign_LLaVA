@@ -77,7 +77,7 @@ echo "Setting CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
 deepspeed --include localhost:${CUDA_ID} --master_port=28315 llava/train/train_xformers.py \
     --deepspeed ./scripts/zero2.json \
     --gradient_accumulation_steps 1 \
-    --yaml_args signllava/configs/pretrain.yaml 
+    --yaml_args signllava/configs/how2sign_pretrain_pose.yaml
 
 
 cp -r ${LOCALDIR}/output ${OUTPUT_DIR}/${SLURM_JOB_ID}

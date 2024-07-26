@@ -36,8 +36,8 @@ SignDataArguments:
   on_the_fly_predicted_context: False
   context_window_size: 0 #number of preceding sentences
   prelude_window_size: 0 #number of sentences at the beginning of the discourse 
-  data_dir: /export/fs06/xzhan138/Sign_LLaVA/signllava/data/How2Sign/
-  annotation_path: /export/fs06/xzhan138/Sign_LLaVA/signllava/data/How2Sign/annotation.train.json
+  data_dir: /truba/msaraclar/How2Sign/
+  annotation_path: /truba/msaraclar/How2Sign/h2s.annotations.train.json
   #annotation_path: /export/fs06/xzhan138/Sign_LLaVA/signllava/checkpoints/pretrain_how2sign/generation.nocontext.json
   visual_features:
     sign2vec:

@@ -27,8 +27,8 @@ which python
 
 # # Change the directory to the sign2vec repository
 # cd /truba/scratch/msaraclar/sign2vec
-export DATA_DIR="/truba/home/msaraclar/data/How2Sign"
-export LOCALDIR="/localscratch/msaraclar/signllava"
+export DATA_DIR="/truba/home/msaraclar/data/YASL"
+export LOCALDIR="/localscratch/msaraclar/signllava_0"
 export OUTPUT_DIR="/truba/scratch/msaraclar/models"
 
 echo "local directory: "
@@ -50,10 +50,9 @@ mkdir -p ${LOCALDIR}/output
 mkdir -p ${OUTPUT_DIR}/${SLURM_JOB_ID}
 cp -r ${DATA_DIR} ${LOCALDIR}
 
-
-mv ${LOCALDIR}/How2Sign/sign2vec/sign2vec.train.0.h5 ${LOCALDIR}/How2Sign/sign2vec/sign2vec.train.train.h5
-mv ${LOCALDIR}/How2Sign/sign2vec/sign2vec.dev.0.h5 ${LOCALDIR}/How2Sign/sign2vec/sign2vec.dev.dev.h5
-mv ${LOCALDIR}/How2Sign/sign2vec/sign2vec.test.0.h5 ${LOCALDIR}/How2Sign/sign2vec/sign2vec.test.test.h5
+# mv ${LOCALDIR}/How2Sign/sign2vec/sign2vec.train.0.h5 ${LOCALDIR}/How2Sign/sign2vec/sign2vec.train.train.h5
+# mv ${LOCALDIR}/How2Sign/sign2vec/sign2vec.dev.0.h5 ${LOCALDIR}/How2Sign/sign2vec/sign2vec.dev.dev.h5
+# mv ${LOCALDIR}/How2Sign/sign2vec/sign2vec.test.0.h5 ${LOCALDIR}/How2Sign/sign2vec/sign2vec.test.test.h5
 
 ls ${LOCALDIR}
 
@@ -63,6 +62,9 @@ date
 # Set environment variables
 export HF_TOKEN="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"
 export WANDB_API_KEY="45373c78d8dfa3b3cfd4694785b7f1f0ffbcf570"
+export WANDB_ENTITY="jsalt2024-slt"
+export WANDB_PROJECT="signllava"
+export WANDB_NAME="llama3_8b_pre_10ep_sign2vec_"
 
 echo "Start generating pointer file."
 

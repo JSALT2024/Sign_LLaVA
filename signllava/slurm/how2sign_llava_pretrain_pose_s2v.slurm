@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --account=msaraclar
 #SBATCH --partition=palamut-cuda
-#SBATCH --job-name=llava_s2v
+#SBATCH --job-name=llava_pose_s2v
 #SBATCH --output=slurm/%A.out
 #SBATCH --error=slurm/%A.err
 #SBATCH --nodes=1
@@ -28,7 +28,7 @@ which python
 # # Change the directory to the sign2vec repository
 # cd /truba/scratch/msaraclar/sign2vec
 export DATA_DIR="/truba/home/msaraclar/data/How2Sign"
-export LOCALDIR="/localscratch/msaraclar/signllava_s2v"
+export LOCALDIR="/localscratch/msaraclar/signllava_pose_s2v"
 export OUTPUT_DIR="/truba/scratch/msaraclar/models"
 
 echo "local directory: "

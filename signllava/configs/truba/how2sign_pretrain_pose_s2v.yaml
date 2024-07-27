@@ -1,0 +1,93 @@
+ModelArguments:
+  model_name_or_path: meta-llama/Meta-Llama-3-8B-Instruct #meta-llama/Meta-Llama-3-70B-Instruct #
+  version: llava_sign_llama_3
+  tune_mm_mlp_adapter: True 
+TrainingArguments:
+  output_dir: /truba/scratch/msaraclar/signllava/output/
+  model_max_length: 2048
+  bf16: True
+  # per_device_train_batch_size: 1
+  # per_device_eval_batch_size: 1
+  auto_find_batch_size: True
+  resume_from_checkpoint: False
+  do_train: True
+  do_eval: True
+  evaluation_strategy: steps
+  save_strategy: steps
+  eval_steps: 1000
+  save_steps: 1000
+  logging_steps: 500
+  metric_for_best_model: eval_loss
+  load_best_model_at_end: True
+  save_total_limit: 5
+  weight_decay: 0.1
+  dataloader_num_workers: 7
+  num_train_epochs: 75
+  learning_rate: 0.0005
+  label_smoothing_factor: 0.2
+  lr_scheduler_type: linear
+  gradient_checkpointing: True
+  double_quant: True # Compress the quantization statistics through double quantization.
+  quant_type: nf4
+  bits: 16 # 4, 8 to enable quantization
+  lora_enable: False
+  lora_r: 64
+  lora_alpha: 16
+  lora_dropout: 0.1
+  lora_weight_path: ""
+  lora_bias: "none"
+  group_by_modality_length: False
+  seed: 42
+  data_seed: 42
+SignDataArguments:
+  context_window_size: 0 #number of preceding sentences
+  prelude_window_size: 0 #number of sentences at the beginning of the discourse 
+  data_dir: /localscratch/msaraclar/signllava_pose/How2Sign
+  annotation_path:
+    train: h2s.annotations.train.json
+    dev: h2s.annotations.dev.json
+  visual_features:
+    sign2vec:
+      enable_input: True
+      train: sign2vec/metadata_sign2vec.train.json
+      dev: sign2vec/metadata_sign2vec.dev.json
+    mae:
+      enable_input: False
+      train: mae/metadata_mae.train.json
+      dev: mae/metadata_mae.dev.json
+    dino:
+      enable_input: False
+      train: dino/metadata_dino.train.json
+      dev: dino/metadata_dino.dev.json
+    pose:
+      enable_input: True
+      train: pose/metadata_pose.train.json
+      dev: pose/metadata_pose.dev.json
+SignModelArguments:
+  projectors:
+    sign2vec: 
+      dim: 768
+      projector_type: mlp2x_gelu # linear
+    mae: 
+      dim: 768
+      projector_type: mlp2x_gelu
+    dino: 
+      dim: 1152
+      projector_type: mlp2x_gelu
+    pose: 
+      dim: 208
+      projector_type: mlp2x_gelu
+SignMultiTaskArguments: # make sure the sum of sample weights is 1
+  translation:
+    enable: True
+    sample_weight: 0.4 #0.4
+  one_word_present:
+    enable: True
+    sample_weight: 0.2 #0.2
+  multi_word_present:
+    enable: True
+    sample_weight: 0.2 #0.2
+    max_num_words: 5 
+  is_reversed:
+    enable: True
+    sample_weight: 0.2 #0.2

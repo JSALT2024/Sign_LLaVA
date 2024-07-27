@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --account=msaraclar
 #SBATCH --partition=palamut-cuda
-#SBATCH --job-name=llava_pose_s2v
+#SBATCH --job-name=llava_s2v
 #SBATCH --output=slurm/%A.out
 #SBATCH --error=slurm/%A.err
 #SBATCH --nodes=1
@@ -28,7 +28,7 @@ which python
 # # Change the directory to the sign2vec repository
 # cd /truba/scratch/msaraclar/sign2vec
 export DATA_DIR="/truba/home/msaraclar/data/How2Sign"
-export LOCALDIR="/localscratch/msaraclar/signllava_pose_s2v"
+export LOCALDIR="/localscratch/msaraclar/signllava_s2v"
 export OUTPUT_DIR="/truba/scratch/msaraclar/models"
 
 echo "local directory: "
@@ -64,7 +64,7 @@ export HF_TOKEN="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"
 export WANDB_API_KEY="45373c78d8dfa3b3cfd4694785b7f1f0ffbcf570"
 export WANDB_ENTITY="jsalt2024-slt"
 export WANDB_PROJECT="H2S"
-export WANDB_RUN_NAME="llama3_8b_pre_10ep_sign2vec"
+export WANDB_NAME="llama3_8b_pre_10ep_sign2vec"
 
 echo "Start generating pointer file."
 

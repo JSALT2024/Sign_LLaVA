@@ -40,11 +40,11 @@ def preprocess_llama_3(
     ###NEW
     conv.messages = []
     for j, sentence in enumerate(source['conversations']):
-        role = roles[sentence["from"]]
+        role = sentence["from"]
         if role == "human":
-            conv.append_message(role, sentence["value"])
+            conv.append_message(conv.roles[j], sentence["value"])
         else:
-            conv.append_message(role, None)
+            conv.append_message(conv.roles[j], None)
     conversations.append(conv.get_prompt())
     ##NEW
     # Apply prompt templates

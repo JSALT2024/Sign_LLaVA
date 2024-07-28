@@ -24,7 +24,7 @@ TrainingArguments:
   dataloader_num_workers: 7
   num_train_epochs: 75
   learning_rate: 0.0005
-  label_smoothing_factor: 0.2
+  label_smoothing_factor: 0.0
   lr_scheduler_type: linear
   gradient_checkpointing: True
   double_quant: True # Compress the quantization statistics through double quantization.

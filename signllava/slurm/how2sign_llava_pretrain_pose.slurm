@@ -6,8 +6,8 @@
 #SBATCH --error=slurm/%A.err
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=16
+#SBATCH --gres=gpu:2
+#SBATCH --cpus-per-task=32
 #SBATCH	--time=72:00:00
 #SBATCH --chdir=/truba/scratch/msaraclar/Sign_LLaVA
 ###SBATCH --mal-user= your_email_address
@@ -64,7 +64,7 @@ export HF_TOKEN="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"
 export WANDB_API_KEY="45373c78d8dfa3b3cfd4694785b7f1f0ffbcf570"
 export WANDB_ENTITY="jsalt2024-slt"
 export WANDB_PROJECT="H2S"
-export WANDB_NAME="llama3_8b_pre_10ep_pose"
+export WANDB_RUN_NAME="llama3_8b_pre_10ep_pose"
 
 echo "Start generating pointer file."
 

@@ -14,9 +14,9 @@ TrainingArguments:
   do_eval: True
   evaluation_strategy: steps
   save_strategy: steps
-  eval_steps: 300
-  save_steps: 300
-  logging_steps: 300
+  eval_steps: 10
+  save_steps: 10
+  logging_steps: 10
   num_train_epochs: 80
   metric_for_best_model: eval_loss
   load_best_model_at_end: True

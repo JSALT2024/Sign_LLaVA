@@ -36,15 +36,26 @@ def preprocess_llama_3(
 ):
     conv = conversation_lib.default_conversation.copy()
     roles = {"human": conv.roles[0], "gpt": conv.roles[1]}
-
-    # Apply prompt templates
     conversations = []
+    ###NEW
     conv.messages = []
+    for j, sentence in enumerate(source['conversations']):
+        role = roles[sentence["from"]]
+        if role == "human":
+            conv.append_message(role, sentence["value"])
+        else:
+            conv.append_message(role, None)
+    conversations.append(conv.get_prompt())
+    ##NEW
+    # Apply prompt templates
+    '''
     for j, sentence in enumerate(source['conversations']):
         role = roles[sentence["from"]]
         assert role == conv.roles[j % 2], f"{i}"
         conv.append_message(role, sentence["value"])
     conversations.append(conv.get_prompt())
+    '''
+
     # Tokenize conversations
     input_ids = torch.stack([tokenizer_video_token(prompt, tokenizer, return_tensors='pt') for prompt in conversations], dim=0)
     targets = input_ids.clone()

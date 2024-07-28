@@ -2,11 +2,13 @@
 GenerateArguments:
   #model_path: signllava/checkpoints/how2sign_llama3_8b_nocontext_pose_pretrain/
   #model_path: signllava/checkpoints/pretrain_how2sign
-  model_path: signllava/checkpoints/llama3_8b_pre_20ep_mae_dino_pose_YTasl_par_keyword1
-  checkpoint_num: 1750
+  #model_path: signllava/checkpoints/llama3_8b_pre_20ep_mae_dino_pose_YTasl_par_keyword1
+  model_path: signllava/checkpoints/llama3_8b_pre_400ep_mae_dino_sign2vec
+  checkpoint_num: 3950
   num_datapoints: 100 # -1 for all
-  task: translation # translation, one_word_present, multi_word_present, is_reversed
-  generate_des: generation.nocontext.json
+  #task: translation # translation, one_word_present, multi_word_present, is_reversed
+  generation_des: generation_prefix_no_translation.json
+  #generate_des: generation.nocontext.json
   #generate_des: generation.prepared_predicted_context.json
   #generate_des: generation.on_the_fly_predicted_context.json
   model_base: meta-llama/Meta-Llama-3-8B-Instruct
@@ -42,16 +44,16 @@ SignDataArguments:
   #annotation_path: /export/fs06/xzhan138/Sign_LLaVA/signllava/checkpoints/pretrain_how2sign/generation.nocontext.json
   visual_features:
     sign2vec:
-      enable_input: False
+      enable_input: True
       test: sign2vec/metadata_sign2vec.train.json
     mae:
       enable_input: True
       test: mae/metadata_mae.train.json
     dino:
-      enable_input: False
+      enable_input: True
       test: dino/metadata_dino.train.json
     pose:
-      enable_input: True
+      enable_input: False
       test: pose/metadata_pose.train.json
 SignModelArguments:
   projectors:

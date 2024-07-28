@@ -83,7 +83,7 @@ class Conversation:
                     else:
                         ret += wrap_inst(message)
                 else:
-                    ret += ""
+                    ret += "<|start_header_id|>assistant<|end_header_id|>"
         elif self.sep_style == SeparatorStyle.PLAIN:
             seps = [self.sep, self.sep2]
             ret = self.system

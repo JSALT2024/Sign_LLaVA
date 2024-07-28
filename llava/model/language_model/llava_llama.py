@@ -71,8 +71,7 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
         return_dict: Optional[bool] = None,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
         self.counter += 1
-        print("forward", self.counter)
-        import pdb; pdb.set_trace()
+        #print("forward", self.counter)
         if s3d and inputs_embeds is None:
             (
                 input_ids,

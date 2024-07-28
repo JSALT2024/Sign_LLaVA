@@ -1,10 +1,10 @@
 #!/bin/bash
 # Uncomment and set the following variables correspondingly to run this script:
 
-# MODEL_VERSION=vicuna-v1-3-7b
-MODEL_VERSION=Meta-Llama-3-8B-Instruct #Meta-Llama-Guard-2-8B #Llama-2-7b-chat-hf
+MODEL_VERSION=vicuna-7b-v1.3
+#MODEL_VERSION=Meta-Llama-3-8B-Instruct #Meta-Llama-Guard-2-8B #Llama-2-7b-chat-hf
 #MODEL_VERSION=Meta-Llama-3-70B-Instruct
-PROMPT_VERSION=llava_sign_llama_3 #llava_llama_2
+PROMPT_VERSION=vicuna_v1 #llava_llama_2 #llava_sign_llama_3 #llava_llama_2
 ########### DO NOT CHANGE ###########
 ########### USE THIS FOR BOTH ###########
 #module load gcc/11.3.0
@@ -18,7 +18,7 @@ echo "Setting CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
 ########### DO NOT CHANGE ###########
 deepspeed --include localhost:${CUDA_ID} --master_port=29501 llava/train/train_xformers.py \
     --deepspeed ./scripts/zero2.json \
-    --model_name_or_path meta-llama/${MODEL_VERSION} \
+    --model_name_or_path lmsys/${MODEL_VERSION} \
     --version $PROMPT_VERSION \
     --data_path ./phoenix14t/data/anno.pretrain.json \
     --s3d_path ./phoenix14t/data/S3D_features.pretrain.pkl \

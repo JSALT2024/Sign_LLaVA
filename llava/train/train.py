@@ -574,9 +574,10 @@ def train(attn_implementation=None):
     sign_model_args = yaml_config["SignModelArguments"]
     sign_multi_task_args = yaml_config["SignMultiTaskArguments"]
     output_dir = training_args.output_dir
-    if os.environ.get("SLURM_JOB_ID", None) is not None:
-        output_dir += "-" + os.environ["SLURM_JOB_ID"]
-    os.makedirs(output_dir, exist_ok=True)
+    if not training_args.resume_from_checkpoint:
+        if os.environ.get("SLURM_JOB_ID", None) is not None:
+            output_dir += "-" + os.environ["SLURM_JOB_ID"]
+        os.makedirs(output_dir, exist_ok=True)
     training_args.run_name = output_dir.split('/')[-1]
     training_args.output_dir = output_dir
 
@@ -719,8 +720,9 @@ def train(attn_implementation=None):
                     args=training_args,
                     **data_module)
     # save the configuration.yaml
-    shutil.copy(extra_args.yaml_args, os.path.join(output_dir, "config.yaml"))
-    model.config.save_pretrained(output_dir)
+    if not training_args.resume_from_checkpoint:
+        shutil.copy(extra_args.yaml_args, os.path.join(output_dir, "config.yaml"))
+        model.config.save_pretrained(output_dir)
 
     # save the language prompt information
     language_prompt = {"system": conversation_lib.default_conversation.system,

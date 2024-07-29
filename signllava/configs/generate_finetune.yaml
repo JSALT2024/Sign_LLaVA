@@ -1,14 +1,9 @@
 
 GenerateArguments:
-  #model_path: signllava/checkpoints/how2sign_llama3_8b_nocontext_pose_pretrain/
-  #model_path: signllava/checkpoints/pretrain_how2sign
-  #model_path: signllava/checkpoints/llama3_8b_pre_20ep_mae_dino_pose_YTasl_par_keyword1
-  model_path: signllava/checkpoints/llama3_8b_pre_400ep_mae_dino_sign2vec
-  checkpoint_num: 3950
+  model_path: signllava/checkpoints/finetune_how2sign_test-107346
+  checkpoint_num: 10
   num_datapoints: 100 # -1 for all
-  #task: translation # translation, one_word_present, multi_word_present, is_reversed
-  generation_des: generation_prefix_no_translation.json
-  #generate_des: generation.nocontext.json
+  generate_des: generation.nocontext.json
   #generate_des: generation.prepared_predicted_context.json
   #generate_des: generation.on_the_fly_predicted_context.json
   model_base: meta-llama/Meta-Llama-3-8B-Instruct
@@ -20,15 +15,15 @@ GenerateArguments:
   skip_special_tokens: True
   num_beams: 5
   remove_invalid_values: True
-  max_new_tokens: 200
+  max_new_tokens: 100
   do_verbose: True
   seed: 42
   bf16: True
 LoraArguments:
-  bits: 16 # 4, 8 to enable quantization
+  bits: 4 # 4, 8 to enable quantization
   quant_type: nf4
   double_quant: True # Compress the quantization statistics through double quantization.
-  lora_enable: False
+  lora_enable: True
   lora_r: 64
   lora_alpha: 16
   lora_dropout: 0.05
@@ -44,28 +39,28 @@ SignDataArguments:
   #annotation_path: /export/fs06/xzhan138/Sign_LLaVA/signllava/checkpoints/pretrain_how2sign/generation.nocontext.json
   visual_features:
     sign2vec:
-      enable_input: True
+      enable_input: False
       test: sign2vec/metadata_sign2vec.train.json
     mae:
-      enable_input: True
+      enable_input: False
       test: mae/metadata_mae.train.json
     dino:
-      enable_input: True
+      enable_input: False
       test: dino/metadata_dino.train.json
     pose:
-      enable_input: False
+      enable_input: True
       test: pose/metadata_pose.train.json
 SignModelArguments:
   projectors:
     sign2vec: 
       dim: 768
-      projector_type: mlp2x_gelu
+      projector_type: linear #mlp2x_gelu
     mae: 
       dim: 768
-      projector_type: mlp2x_gelu
+      projector_type: linear
     dino: 
       dim: 1152
-      projector_type: mlp2x_gelu
+      projector_type: linear
     pose: 
       dim: 208
-      projector_type: mlp2x_gelu
+      projector_type: linear

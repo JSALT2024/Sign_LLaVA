@@ -16,6 +16,7 @@ def load_pretrained_model(config, use_flash_attn=False, device_map="auto", devic
         kwargs['device_map'] = {"": device}
 
     lora_config = config['LoraArguments']
+    '''
     if lora_config['bits']==8:
         kwargs['load_in_8bit'] = True
     elif lora_config['bits']==4:
@@ -27,7 +28,9 @@ def load_pretrained_model(config, use_flash_attn=False, device_map="auto", devic
             bnb_4bit_quant_type='nf4'
         )
     else:
-        kwargs['torch_dtype'] = torch.bfloat16 if config['GenerateArguments']['bf16'] else torch.float16
+    '''
+
+    kwargs['torch_dtype'] = torch.bfloat16 if config['GenerateArguments']['bf16'] else torch.float16
 
     if use_flash_attn:
         kwargs['attn_implementation'] = 'flash_attention_2'
@@ -52,6 +55,8 @@ def load_pretrained_model(config, use_flash_attn=False, device_map="auto", devic
                 sign_model_args=config['SignModelArguments'],
                 sign_data_args=config['SignDataArguments'],
                 **kwargs)
+        tokenizer.add_tokens([DEFAULT_VIDEO_START_TOKEN, DEFAULT_VIDEO_END_TOKEN], special_tokens=True)
+        model.resize_token_embeddings(len(tokenizer))
         token_num, tokem_dim = model.lm_head.out_features, model.lm_head.in_features
         if model.lm_head.weight.shape[0] != token_num:
             model.lm_head.weight = torch.nn.Parameter(torch.empty(token_num, tokem_dim, device=model.device, dtype=model.dtype))
@@ -59,7 +64,7 @@ def load_pretrained_model(config, use_flash_attn=False, device_map="auto", devic
 
         print('Loading additional LLaVA weights...')
         if os.path.exists(os.path.join(model_path, f"checkpoint-{checkpoint_num}", 'non_lora_trainables.bin')):
-            non_lora_trainables = torch.load(os.path.join(model_path, 'non_lora_trainables.bin'), map_location='cpu')
+            non_lora_trainables = torch.load(os.path.join(model_path, f"checkpoint-{checkpoint_num}", 'non_lora_trainables.bin'), map_location='cpu')
         else:
             non_lora_trainables = {}
         non_lora_trainables = {(k[11:] if k.startswith('base_model.') else k): v for k, v in non_lora_trainables.items()}
@@ -73,7 +78,9 @@ def load_pretrained_model(config, use_flash_attn=False, device_map="auto", devic
         model = PeftModel.from_pretrained(model, peft_model_path)
         print('Merging LoRA weights...')
         model = model.merge_and_unload()
-        print('Model is loaded...')
+        print("[SignLLaVA]: The following non-lora parameters are loaded: ", list(non_lora_trainables.keys()))
+        print("[SignLLaVA]: Lora parameters are also loaded.")
+        print("[SignLLaVA]: Model is loaded from", model_path)
     else:
         # this may be mm projector only
         tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False)
@@ -88,13 +95,18 @@ def load_pretrained_model(config, use_flash_attn=False, device_map="auto", devic
                 sign_model_args=config['SignModelArguments'],
                 sign_data_args=config['SignDataArguments'],
                 **kwargs)
+        print("[SignLLaVA]: Model dtype: ", model.dtype)
         tokenizer.add_tokens([DEFAULT_VIDEO_START_TOKEN, DEFAULT_VIDEO_END_TOKEN], special_tokens=True)
         model.resize_token_embeddings(len(tokenizer))
         model_state_path = glob.glob(os.path.join(model_path, f"checkpoint-{checkpoint_num}/global_step{checkpoint_num}/*model_states.pt"))[0]
         mm_projector_weights = torch.load(model_state_path, map_location='cpu')['module']
         mm_projector_weights = {k: v.to(kwargs['torch_dtype']) for k, v in mm_projector_weights.items()}
         model.load_state_dict(mm_projector_weights, strict=False)
-
+        loaded_params = []
+        for name, param in mm_projector_weights.items():
+            loaded_params.append(name)
+        print("[SignLLaVA]: The following parameters are loaded: ", loaded_params)
+        print("[SignLLaVA]: Model is loaded from", model_state_path)
     if hasattr(model.config, "max_sequence_length"):
         context_len = model.config.max_sequence_length
     else:

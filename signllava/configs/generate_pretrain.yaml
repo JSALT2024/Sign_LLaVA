@@ -1,0 +1,65 @@
+
+GenerateArguments:
+  model_path: signllava/checkpoints/pretrain_test_multitask-106629
+  checkpoint_num: 20
+  num_datapoints: 100 # -1 for all
+  generate_des: generation.nocontext.json
+  #generate_des: generation.prepared_predicted_context.json
+  #generate_des: generation.on_the_fly_predicted_context.json
+  model_base: meta-llama/Meta-Llama-3-8B-Instruct
+  conv_mode: llava_sign_llama_3
+  top_p: 1
+  min_length: 1 
+  temperature: 0.1
+  do_sample: False # otherwise use greedy decoding
+  skip_special_tokens: True
+  num_beams: 5
+  remove_invalid_values: True
+  max_new_tokens: 100
+  do_verbose: True
+  seed: 42
+  bf16: True
+LoraArguments:
+  bits: 16 # 4, 8 to enable quantization
+  quant_type: nf4
+  double_quant: True # Compress the quantization statistics through double quantization.
+  lora_enable: False
+  lora_r: 64
+  lora_alpha: 16
+  lora_dropout: 0.05
+  lora_weight_path: ""
+  lora_bias: "none"
+SignDataArguments:
+  prepared_predicted_context: False 
+  on_the_fly_predicted_context: False
+  context_window_size: 0 #number of preceding sentences
+  prelude_window_size: 0 #number of sentences at the beginning of the discourse 
+  data_dir: /export/fs06/xzhan138/Sign_LLaVA/signllava/data/How2Sign/
+  annotation_path: /export/fs06/xzhan138/Sign_LLaVA/signllava/data/How2Sign/annotation.train.json
+  visual_features:
+    sign2vec:
+      enable_input: False
+      test: sign2vec/metadata_sign2vec.train.json
+    mae:
+      enable_input: False
+      test: mae/metadata_mae.train.json
+    dino:
+      enable_input: False
+      test: dino/metadata_dino.train.json
+    pose:
+      enable_input: True
+      test: pose/metadata_pose.train.json
+SignModelArguments:
+  projectors:
+    sign2vec: 
+      dim: 768
+      projector_type: mlp2x_gelu
+    mae: 
+      dim: 768
+      projector_type: mlp2x_gelu
+    dino: 
+      dim: 1152
+      projector_type: mlp2x_gelu
+    pose: 
+      dim: 208
+      projector_type: mlp2x_gelu

@@ -1,10 +1,9 @@
 ModelArguments:
   model_name_or_path: meta-llama/Meta-Llama-3-8B-Instruct #meta-llama/Meta-Llama-3-70B-Instruct #
   version: llava_sign_llama_3
-  tune_mm_mlp_adapter: True 
+  tune_mm_mlp_adapter: True
 TrainingArguments:
-  output_dir: signllava/checkpoints/pretrain_test_multitask
-  model_max_length: 2048
+  output_dir: signllava/checkpoints/pretrain_how2sign
   bf16: True
   #per_device_train_batch_size: 2
   #per_device_eval_batch_size: 1
@@ -67,29 +66,30 @@ SignDataArguments:
       dev: pose/metadata_pose.dev.json
 SignModelArguments:
   projectors:
+    #pretrained_projector_ckpt: signllava/checkpoints//pretrain_test_multitask-106629/checkpoint-20/global_step20/mp_rank_00_model_states.pt
     sign2vec: 
       dim: 768
-      projector_type: mlp2x_gelu # linear
+      projector_type: linear #mlp2x_gelu
     mae: 
       dim: 768
-      projector_type: mlp2x_gelu
+      projector_type: linear
     dino: 
       dim: 1152
-      projector_type: mlp2x_gelu
+      projector_type: linear
     pose: 
       dim: 208
-      projector_type: mlp2x_gelu
+      projector_type: linear
 SignMultiTaskArguments: # make sure the sum of sample weights is 1
   translation:
     enable: True
-    sample_weight: 0.4 #0.4
+    sample_weight: 1 #0.4
   one_word_present:
-    enable: True
-    sample_weight: 0.2 #0.2
+    enable: False
+    sample_weight: 0 #0.2
   multi_word_present:
-    enable: True
-    sample_weight: 0.2 #0.2
+    enable: False
+    sample_weight: 0 #0.2
     max_num_words: 5 
   is_reversed:
-    enable: True
-    sample_weight: 0.2 #0.2
+    enable: False
+    sample_weight: 0 #0.2

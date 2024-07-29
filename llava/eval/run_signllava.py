@@ -36,12 +36,12 @@ def preprocess_llama_3(
 ):
     conv = conversation_lib.default_conversation.copy()
     roles = {"human": conv.roles[0], "gpt": conv.roles[1]}
-    conversations = []
+    conversations = [] 
     ###NEW
     conv.messages = []
     for j, sentence in enumerate(source['conversations']):
-        role = roles[sentence["from"]]
-        if role == "human":
+        role = conv.roles[j]
+        if sentence["from"] == "human":
             conv.append_message(role, sentence["value"])
         else:
             conv.append_message(role, None)
@@ -332,14 +332,11 @@ def eval_model(config_yaml):
                 input_ids.unsqueeze(0),
                 batch_first=True,
                 padding_value=tokenizer.pad_token_id)
-            labels = torch.nn.utils.rnn.pad_sequence(labels.unsqueeze(0),
-                                                    batch_first=True,
-                                                    padding_value=IGNORE_INDEX)
             input_ids = input_ids[:, :model_max_length].to(model.device)
-            labels = labels[:, :model_max_length].to(model.device)
+            model.config.use_cache = True
             output_dict = model.generate(
                 inputs = input_ids,
-                labels = labels,
+                labels = None,
                 visual_features = [data_dict['visual_features']],
                 video_sep_ids = [data_dict['video_sep_ids']],
                 pad_token_id = tokenizer.unk_token_id,
@@ -357,8 +354,8 @@ def eval_model(config_yaml):
             if config['GenerateArguments']['do_verbose']:
                 print("reference:", translation[0])
                 print("outputs:", outputs)
-                print("scores", scores)
-                print("output_ids", output_ids)
+                #print("scores", scores)
+                #print("output_ids", output_ids)
             generation[data_dict['video_id']]['clip_order'] = annotation[data_dict['video_id']]['clip_order']
             generation[data_dict['video_id']][data_dict['clip_name']] = annotation[data_dict['video_id']][data_dict['clip_name']]
             generation[data_dict['video_id']][data_dict['clip_name']]['hypothesis'] = outputs

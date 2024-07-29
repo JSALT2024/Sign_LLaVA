@@ -574,9 +574,10 @@ def train(attn_implementation=None):
     sign_model_args = yaml_config["SignModelArguments"]
     sign_multi_task_args = yaml_config["SignMultiTaskArguments"]
     output_dir = training_args.output_dir
-    if os.environ.get("SLURM_JOB_ID", None) is not None:
-        output_dir += "-" + os.environ["SLURM_JOB_ID"]
-    os.makedirs(output_dir, exist_ok=True)
+    if not training_args.resume_from_checkpoint:
+        if os.environ.get("SLURM_JOB_ID", None) is not None:
+            output_dir += "-" + os.environ["SLURM_JOB_ID"]
+        os.makedirs(output_dir, exist_ok=True)
     training_args.run_name = output_dir.split('/')[-1]
     training_args.output_dir = output_dir
 
@@ -586,6 +587,7 @@ def train(attn_implementation=None):
     local_rank = training_args.local_rank
     compute_dtype = (torch.float16 if training_args.fp16 else (torch.bfloat16 if training_args.bf16 else torch.float32))
 
+    # skip projectors for quantization
     projector_lst = []
     for input_type in sign_data_args['visual_features']:
         if eval(f"sign_data_args['visual_features']['{input_type}']['enable_input']"):
@@ -598,8 +600,8 @@ def train(attn_implementation=None):
         bnb_model_from_pretrained_args.update(dict(
             #device_map="auto",
             device_map={"": training_args.device},
-            # load_in_4bit=training_args.bits == 4,
-            # load_in_8bit=training_args.bits == 8,
+            load_in_4bit=training_args.bits == 4,
+            load_in_8bit=training_args.bits == 8,
             quantization_config=BitsAndBytesConfig(
                 load_in_4bit=training_args.bits == 4,
                 load_in_8bit=training_args.bits == 8,
@@ -622,7 +624,6 @@ def train(attn_implementation=None):
                 sign_data_args=sign_data_args,
                 **bnb_model_from_pretrained_args
             )
-    model.config.use_cache = False
 
     if model_args.freeze_backbone:
         model.model.requires_grad_(False)
@@ -638,7 +639,8 @@ def train(attn_implementation=None):
             def make_inputs_require_grad(module, input, output):
                 output.requires_grad_(True)
             model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
-
+    
+    # lora skip lm_head and projectors
     if training_args.lora_enable:
         from peft import LoraConfig, get_peft_model
         lora_config = LoraConfig(
@@ -672,6 +674,8 @@ def train(attn_implementation=None):
     model.config.tokenizer_padding_side = tokenizer.padding_side
     model.config.tokenizer_model_max_length = tokenizer.model_max_length
 
+    model.get_model().initialize_projectors()
+
     model.config.tune_mm_mlp_adapter = training_args.tune_mm_mlp_adapter = model_args.tune_mm_mlp_adapter
     if model_args.tune_mm_mlp_adapter:
         model.requires_grad_(False)
@@ -695,7 +699,12 @@ def train(attn_implementation=None):
                 projector.to(dtype=compute_dtype, device=training_args.device)
 
     model.config.mm_projector_lr = training_args.mm_projector_lr
-    model.initialize_vision_tokenizer(model_args, tokenizer=tokenizer)
+    model.initialize_vision_tokenizer(model_args, tokenizer=tokenizer, sign_model_args=sign_model_args)
+
+    if training_args.lora_enable:
+        for name, param in model.named_parameters():
+            if 'lora' in name:
+                param.requires_grad = True
 
     if training_args.bits in [4, 8]:
         from peft.tuners.lora import LoraLayer
@@ -714,13 +723,24 @@ def train(attn_implementation=None):
                                               sign_data_args=sign_data_args,
                                               sign_multi_task_args=sign_multi_task_args)
     
+    param_update = set()
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            if 'lora' in name:
+                param_update.add('lora adapters')
+            else:
+                param_update.add(name)
+    print("[SignLLaVA]: The following parameters will be updated: ", sorted(param_update))
+
+    tokenizer.save_pretrained(output_dir)
     trainer = LLaVATrainer(model=model,
                     tokenizer=tokenizer,
                     args=training_args,
                     **data_module)
     # save the configuration.yaml
-    shutil.copy(extra_args.yaml_args, os.path.join(output_dir, "config.yaml"))
-    model.config.save_pretrained(output_dir)
+    if not training_args.resume_from_checkpoint:
+        shutil.copy(extra_args.yaml_args, os.path.join(output_dir, "config.yaml"))
+        model.config.save_pretrained(output_dir)
 
     # save the language prompt information
     language_prompt = {"system": conversation_lib.default_conversation.system,
@@ -728,12 +748,11 @@ def train(attn_implementation=None):
     with open(os.path.join(output_dir, "prompt.json"), "w") as prompt_json_file:
         json.dump(language_prompt, prompt_json_file)
     if training_args.resume_from_checkpoint and list(pathlib.Path(output_dir).glob("checkpoint-*")):
+        print("[SignLLaVA]: resume training from checkpoint: ", output_dir)
         trainer.train(resume_from_checkpoint=True)
     else:
         trainer.train()
     trainer.save_state()
-
-    model.config.use_cache = True
 
 if __name__ == "__main__":
     train()

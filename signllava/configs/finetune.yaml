@@ -9,14 +9,14 @@ TrainingArguments:
   #per_device_train_batch_size: 1
   #per_device_eval_batch_size: 1
   auto_find_batch_size: True
-  resume_from_checkpoint: False
+  resume_from_checkpoint: True
   do_train: True
   do_eval: True
   evaluation_strategy: steps
   save_strategy: steps
-  eval_steps: 300
-  save_steps: 300
-  logging_steps: 300
+  eval_steps: 10
+  save_steps: 10
+  logging_steps: 10
   metric_for_best_model: eval_loss
   load_best_model_at_end: True
   save_total_limit: 5
@@ -25,6 +25,7 @@ TrainingArguments:
   dataloader_num_workers: 4
   num_train_epochs: 80
   learning_rate: 0.00002
+  mm_projector_lr: 0.00002
   label_smoothing_factor: 0.1
   lr_scheduler_type: cosine
   gradient_checkpointing: True
@@ -67,19 +68,19 @@ SignDataArguments:
       dev: pose/metadata_pose.dev.json
 SignModelArguments:
   projectors:
-    pretrained_projector_ckpt: signllava/checkpoints/pretrain_how2sign/checkpoint-300/global_step300/mp_rank_00_model_states.pt
+    pretrained_projector_ckpt: signllava/checkpoints//pretrain_test_multitask-106629/checkpoint-20/global_step20/mp_rank_00_model_states.pt
     sign2vec: 
       dim: 768
-      projector_type: mlp2x_gelu
+      projector_type: linear #mlp2x_gelu
     mae: 
       dim: 768
-      projector_type: mlp2x_gelu
+      projector_type: linear #mlp2x_gelu
     dino: 
       dim: 1152
-      projector_type: mlp2x_gelu
+      projector_type: linear # mlp2x_gelu
     pose: 
       dim: 208
-      projector_type: mlp2x_gelu
+      projector_type: linear #mlp2x_gelu
 SignMultiTaskArguments: # make sure the sum of sample weights is 1
   translation:
     enable: True

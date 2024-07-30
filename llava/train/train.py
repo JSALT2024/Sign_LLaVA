@@ -267,14 +267,18 @@ class SignContextDataset(Dataset):
     def __init__(self, tokenizer: transformers.PreTrainedTokenizer,
                  sign_data_args: dict,
                  sign_multi_task_args: dict,
-                 split: str):
+                 sign_multi_task_eval_args: dict=None,
+                 split: str='train'):
         super(SignContextDataset, self).__init__()
         self.sign_data_args = sign_data_args
         self.sign_multi_task_args = sign_multi_task_args
+        self.sign_multi_task_eval_args = sign_multi_task_eval_args
         self.tokenizer = tokenizer
         self.split = split
         data_dir = sign_data_args['data_dir']
         self.tasks = self.get_tasks() # {"translation": 0.4, "one_word_present": 0.2, "multi_word_present": 0.2, "is_reversed": 0.2}
+        if self.sign_multi_task_eval_args is not None:
+            self.eval_tasks = self.get_tasks_eval()
 
         if self.split == "train":
             annotation_path = sign_data_args['annotation_path']['train']
@@ -289,16 +293,15 @@ class SignContextDataset(Dataset):
         # self.list_data: i -> (video_id, clip_id)
         self.list_data = [] # [(video_id, clip_id), ...]
         
-        # build keyword vocabulary if needed
-        if self.split == "train" and ("one_word_present" in self.tasks or "multi_word_present" in self.tasks):
-            self.keyword_vocabulary = {}
-            for video_id in self.annotation:
-                for clip_name in self.annotation[video_id]:
-                    if clip_name != "clip_order":
-                        clip_dict = self.annotation[video_id][clip_name]
-                        keywords = clip_dict['keywords']
-                        if keywords != []:
-                            self.keyword_vocabulary.update({k: 1 for k in keywords})
+        # build keyword vocabulary
+        self.keyword_vocabulary = {}
+        for video_id in self.annotation:
+            for clip_name in self.annotation[video_id]:
+                if clip_name != "clip_order":
+                    clip_dict = self.annotation[video_id][clip_name]
+                    keywords = clip_dict['keywords']
+                    if keywords != []:
+                        self.keyword_vocabulary.update({k: 1 for k in keywords})
 
         self.h5shard = defaultdict(lambda: defaultdict(dict))
         self.clip_order_to_int = {}
@@ -371,6 +374,7 @@ class SignContextDataset(Dataset):
         video_token = DEFAULT_VIDEO_START_TOKEN + DEFAULT_VIDEO_TOKEN + DEFAULT_VIDEO_END_TOKEN
 
         sampled_task, text_prompt, response = self.get_task_prompt(video_id, clip_name, context)
+        import pdb; pdb.set_trace()
 
         # get the visual features
         visual_features = {}
@@ -426,15 +430,25 @@ class SignContextDataset(Dataset):
     def get_tasks(self):
         tasks = {}
         for task in self.sign_multi_task_args:
-            if self.sign_multi_task_args[task]['enable'] and self.sign_multi_task_args[task]['sample_weight'] > 0:
+            if self.sign_multi_task_args[task]['sample_weight'] > 0:
                 tasks[task] = self.sign_multi_task_args[task]['sample_weight']
+        return tasks
+    
+    def get_tasks_eval(self):
+        tasks = {}
+        for task in self.sign_multi_task_eval_args:
+            if self.sign_multi_task_eval_args[task]['sample_weight'] > 0:
+                tasks[task] = self.sign_multi_task_eval_args[task]['sample_weight']
         return tasks
     
     def get_task_prompt(self, video_id, clip_name, context):
         # {"translation": 0.4, "one_word_present": 0.2, "multi_word_present": 0.2, "is_reversed": 0.2}
         clip_dict = self.annotation[video_id][clip_name]
-        if self.split == 'train':
-            sampled_task = random.choices(list(self.tasks.keys()), weights=list(self.tasks.values()), k=1)[0]
+        if self.split == 'train' or (self.split == 'dev' and self.sign_multi_task_eval_args is not None):
+            if self.split == 'train':
+                sampled_task = random.choices(list(self.tasks.keys()), weights=list(self.tasks.values()), k=1)[0]
+            else:
+                sampled_task = random.choices(list(self.eval_tasks.keys()), weights=list(self.eval_tasks.values()), k=1)[0]
             if sampled_task == "translation": 
                 if self.sign_data_args.get('use_paraphrases', False):
                     translation = random.choice(clip_dict['paraphrases'] + [clip_dict['translation']])
@@ -529,18 +543,21 @@ class DataCollatorForSupervisedDataset(object):
 
 def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer,
                                 sign_data_args,
-                                sign_multi_task_args) -> Dict:
+                                sign_multi_task_args,
+                                sign_multi_task_eval_args) -> Dict:
     """Make dataset and collator for supervised fine-tuning."""
     train_dataset = SignContextDataset(
         tokenizer = tokenizer,
         sign_data_args = sign_data_args,
         sign_multi_task_args = sign_multi_task_args,
+        sign_multi_task_eval_args = sign_multi_task_eval_args,
         split = "train"
     )
     dev_dataset = SignContextDataset(
         tokenizer = tokenizer,
         sign_data_args = sign_data_args,
         sign_multi_task_args = sign_multi_task_args,
+        sign_multi_task_eval_args = sign_multi_task_eval_args,
         split = "dev"
     )
     data_collator = DataCollatorForSupervisedDataset(tokenizer=tokenizer)
@@ -573,6 +590,7 @@ def train(attn_implementation=None):
     sign_data_args = yaml_config["SignDataArguments"]
     sign_model_args = yaml_config["SignModelArguments"]
     sign_multi_task_args = yaml_config["SignMultiTaskArguments"]
+    sign_multi_task_eval_args = yaml_config.get("SignMultiTaskEvalArguments", None)
     output_dir = training_args.output_dir
     if not training_args.resume_from_checkpoint:
         if os.environ.get("SLURM_JOB_ID", None) is not None:
@@ -721,7 +739,8 @@ def train(attn_implementation=None):
 
     data_module = make_supervised_data_module(tokenizer=tokenizer,
                                               sign_data_args=sign_data_args,
-                                              sign_multi_task_args=sign_multi_task_args)
+                                              sign_multi_task_args=sign_multi_task_args,
+                                              sign_multi_task_eval_args=sign_multi_task_eval_args)
     
     param_update = set()
     for name, param in model.named_parameters():

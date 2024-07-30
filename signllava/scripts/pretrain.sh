@@ -13,4 +13,4 @@ export WANDB_WATCH=all
 deepspeed --include localhost:${CUDA_ID} --master_port=28715 llava/train/train_xformers.py \
     --deepspeed ./scripts/zero2.json \
     --gradient_accumulation_steps 1 \
-    --yaml_args signllava/configs/pretrain.yaml 
+    --yaml_args signllava/configs/pretrain.yaml

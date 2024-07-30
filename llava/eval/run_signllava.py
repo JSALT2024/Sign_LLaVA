@@ -55,7 +55,6 @@ def preprocess_llama_3(
         conv.append_message(role, sentence["value"])
     conversations.append(conv.get_prompt())
     '''
-
     # Tokenize conversations
     input_ids = torch.stack([tokenizer_video_token(prompt, tokenizer, return_tensors='pt') for prompt in conversations], dim=0)
     targets = input_ids.clone()
@@ -262,7 +261,6 @@ def eval_model(config_yaml):
     
     checkpoint_num = config['GenerateArguments']['checkpoint_num'] 
     shutil.copy(config_yaml, os.path.join(config['GenerateArguments']['model_path'], f"generation-{checkpoint_num}.yaml"))
-
     set_same_seed(config['GenerateArguments']['seed'])
 
     dtype = torch.bfloat16 if config['GenerateArguments']['bf16'] else torch.float16
@@ -355,7 +353,7 @@ def eval_model(config_yaml):
                 print("reference:", translation[0])
                 print("outputs:", outputs)
                 #print("scores", scores)
-                #print("output_ids", output_ids)
+                print("output_ids", output_ids)
             generation[data_dict['video_id']]['clip_order'] = annotation[data_dict['video_id']]['clip_order']
             generation[data_dict['video_id']][data_dict['clip_name']] = annotation[data_dict['video_id']][data_dict['clip_name']]
             generation[data_dict['video_id']][data_dict['clip_name']]['hypothesis'] = outputs

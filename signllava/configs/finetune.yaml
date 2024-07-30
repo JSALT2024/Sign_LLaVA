@@ -71,16 +71,16 @@ SignModelArguments:
     pretrained_projector_ckpt: signllava/checkpoints//pretrain_test_multitask-106629/checkpoint-20/global_step20/mp_rank_00_model_states.pt
     sign2vec: 
       dim: 768
-      projector_type: linear #mlp2x_gelu
+      projector_type: mlp2x_gelu #linear
     mae: 
       dim: 768
-      projector_type: linear #mlp2x_gelu
+      projector_type: mlp2x_gelu #linear
     dino: 
       dim: 1152
-      projector_type: linear # mlp2x_gelu
+      projector_type: mlp2x_gelu #linear
     pose: 
       dim: 208
-      projector_type: linear #mlp2x_gelu
+      projector_type: mlp2x_gelu #linear
 SignMultiTaskArguments: # make sure the sum of sample weights is 1
   translation:
     enable: True

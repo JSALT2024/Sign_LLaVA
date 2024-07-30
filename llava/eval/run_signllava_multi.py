@@ -36,14 +36,15 @@ def preprocess_llama_3(
 ):
     conv = conversation_lib.default_conversation.copy()
     roles = {"human": conv.roles[0], "gpt": conv.roles[1]}
-
-    # Apply prompt templates
     conversations = []
+    # Apply prompt templates
     conv.messages = []
     for j, sentence in enumerate(source['conversations']):
-        role = roles[sentence["from"]]
-        assert role == conv.roles[j % 2], f"{i}"
-        conv.append_message(role, sentence["value"])
+        role = conv.roles[j]
+        if sentence["from"] == "human":
+            conv.append_message(role, sentence["value"])
+        else:
+            conv.append_message(role, None)
     conversations.append(conv.get_prompt())
     # Tokenize conversations
     input_ids = torch.stack([tokenizer_video_token(prompt, tokenizer, return_tensors='pt') for prompt in conversations], dim=0)
@@ -94,11 +95,13 @@ class SignContextDataset(Dataset):
     """Dataset for supervised training for sign language translation with context."""
     def __init__(self, tokenizer: transformers.PreTrainedTokenizer,
                 sign_data_args: dict,
+                sign_multi_task_args,
                 split: str,
                 task: str,
                 dtype):
         super(SignContextDataset, self).__init__()
         self.sign_data_args = sign_data_args
+        self.sign_multi_task_args = sign_multi_task_args
         self.tokenizer = tokenizer
         self.split = split
         self.dtype = dtype
@@ -111,6 +114,15 @@ class SignContextDataset(Dataset):
         # }
         # self.list_data: i -> (video_id, clip_id)
         self.list_data = [] # [(video_id, clip_id), ...]
+
+        self.keyword_vocabulary = {}
+        for video_id in self.annotation:
+            for clip_name in self.annotation[video_id]:
+                if clip_name != "clip_order":
+                    clip_dict = self.annotation[video_id][clip_name]
+                    keywords = clip_dict['keywords']
+                    if keywords != []:
+                        self.keyword_vocabulary.update({k: 1 for k in keywords})
 
         self.h5shard = defaultdict(lambda: defaultdict(dict))
         self.clip_order_to_int = {}
@@ -188,6 +200,7 @@ class SignContextDataset(Dataset):
         src['id'] = "({0},{1})".format(str(video_id), str(clip_id))
         video_token = DEFAULT_VIDEO_START_TOKEN + DEFAULT_VIDEO_TOKEN + DEFAULT_VIDEO_END_TOKEN
         text_prompt, response = self.get_task_prompt(self.task, video_id, clip_name, context)
+        print("Prompt:", text_prompt)
 
         # get the visual features
         visual_features = {}
@@ -213,6 +226,7 @@ class SignContextDataset(Dataset):
         data_dict['video_id'] = video_id
         data_dict['clip_name'] = clip_name
         data_dict['reference'] = response
+        data_dict['prompt'] = text_prompt
         return data_dict
 
     def read_multih5_json(self, data_dir, json_filename, input_type):
@@ -329,10 +343,12 @@ def eval_model(config_yaml):
     tokenizer.padding_side = "right"
     video_token = DEFAULT_VIDEO_START_TOKEN + DEFAULT_VIDEO_TOKEN + DEFAULT_VIDEO_END_TOKEN
     task = config['GenerateArguments']['task']
-
+    sign_data_args = config['SignDataArguments']
+    sign_multi_task_args = config['SignMultiTaskArguments']
     test_dataset = SignContextDataset(
         tokenizer = tokenizer,
         sign_data_args = sign_data_args,
+        sign_multi_task_args = sign_multi_task_args,
         split = "test",
         task = task,
         dtype = dtype
@@ -375,18 +391,15 @@ def eval_model(config_yaml):
             input_ids = data_dict['input_ids']
             labels = data_dict['labels']
             reference = data_dict['reference']
+            prompt = data_dict['prompt']
             input_ids = torch.nn.utils.rnn.pad_sequence(
                 input_ids.unsqueeze(0),
                 batch_first=True,
                 padding_value=tokenizer.pad_token_id)
-            labels = torch.nn.utils.rnn.pad_sequence(labels.unsqueeze(0),
-                                                    batch_first=True,
-                                                    padding_value=IGNORE_INDEX)
             input_ids = input_ids[:, :model_max_length].to(model.device)
-            labels = labels[:, :model_max_length].to(model.device)
             output_dict = model.generate(
                 inputs = input_ids,
-                labels = labels,
+                labels = None,
                 visual_features = [data_dict['visual_features']],
                 video_sep_ids = [data_dict['video_sep_ids']],
                 pad_token_id = tokenizer.unk_token_id,
@@ -402,13 +415,15 @@ def eval_model(config_yaml):
             outputs = tokenizer.batch_decode(output_ids, 
                 skip_special_tokens=config['GenerateArguments']['skip_special_tokens'])[0].strip()
             if config['GenerateArguments']['do_verbose']:
-                print("reference:", reference[0])
+                print("reference:", reference)
                 print("outputs:", outputs)
-                print("scores", scores)
-                print("output_ids", output_ids)
+                #print("scores", scores)
+                #print("output_ids", output_ids)
             generation[data_dict['video_id']]['clip_order'] = annotation[data_dict['video_id']]['clip_order']
             generation[data_dict['video_id']][data_dict['clip_name']] = annotation[data_dict['video_id']][data_dict['clip_name']]
             generation[data_dict['video_id']][data_dict['clip_name']]['hypothesis'] = outputs
+            generation[data_dict['video_id']][data_dict['clip_name']]['reference'] = reference
+            generation[data_dict['video_id']][data_dict['clip_name']]['prompt'] = prompt
             
     with open(os.path.join(config['GenerateArguments']['model_path'], config['GenerateArguments']['generate_des']), 'w') as gen_file:
         json.dump(generation, gen_file)

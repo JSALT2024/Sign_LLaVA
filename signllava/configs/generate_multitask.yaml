@@ -2,8 +2,9 @@
 GenerateArguments:
   model_path: signllava/checkpoints/pretrain_test_multitask-106629
   checkpoint_num: 20
-  num_datapoints: 100 # -1 for all
-  generate_des: generation.nocontext.json
+  num_datapoints: 20 # -1 for all
+  task: translation # one_word_present, multi_word_present, translation, is_reversed 
+  generate_des: generation.multiple_keywords.json
   #generate_des: generation.prepared_predicted_context.json
   #generate_des: generation.on_the_fly_predicted_context.json
   model_base: meta-llama/Meta-Llama-3-8B-Instruct
@@ -63,3 +64,6 @@ SignModelArguments:
     pose: 
       dim: 208
       projector_type: linear #mlp2x_gelu
+SignMultiTaskArguments: 
+  multi_word_present:
+    max_num_words: 5 

@@ -1,0 +1,94 @@
+ModelArguments:
+  model_name_or_path: meta-llama/Meta-Llama-3-8B-Instruct
+  tune_mm_mlp_adapter: true
+  version: llava_sign_llama_3
+SignDataArguments:
+  annotation_path:
+    dev: features2/H2S.annotations.train.json
+    train: features2/H2S.annotations.train.json
+  context_window_size: 0
+  data_dir: /export/fs06/xzhan138/Sign_LLaVA/signllava/checkpoints/brutal_overfit-7855193
+  prelude_window_size: 0
+  use_paraphrases: true
+  visual_features:
+    dino:
+      dev: features/dino/H2S.dino.dev.json
+      enable_input: false
+      train: features/dino/H2S.dino.train.json
+    mae:
+      dev: features/mae/16-07_21-52-12/H2S.mae.dev.json
+      enable_input: false
+      train: features/mae/16-07_21-52-12/H2S.mae.train.json
+    pose:
+      dev: features/H2S.over.train.json
+      enable_input: true
+      train: features/H2S.over.train.json
+    sign2vec:
+      dev: features/sign2vec/new/metadata_sign2vec.dev.json
+      enable_input: false
+      train: features/sign2vec/new/metadata_sign2vec.train.json
+SignModelArguments:
+  projectors:
+    pretrained_projector_ckpt: signllava/checkpoints/brutal_overfit-7855193/checkpoint-61000/global_step61000/mp_rank_00_model_states.pt
+    dino:
+      dim: 1152
+      projector_type: mlp1x_gelu
+    mae:
+      dim: 768
+      projector_type: mlp1x_gelu
+    pose:
+      dim: 189
+      projector_type: mlp1x_gelu
+    sign2vec:
+      dim: 768
+      projector_type: mlp1x_gelu
+SignMultiTaskArguments:
+  is_reversed:
+    enable: false
+    sample_weight: 0
+  multi_word_present:
+    enable: false
+    max_num_words: 5
+    sample_weight: 0
+  one_word_present:
+    enable: false
+    sample_weight: 0
+  translation:
+    enable: true
+    sample_weight: 1
+TrainingArguments:
+  bf16: true
+  bits: 16
+  data_seed: 42
+  dataloader_num_workers: 7
+  do_eval: true
+  do_train: true
+  double_quant: true
+  eval_steps: 10
+  evaluation_strategy: steps
+  gradient_checkpointing: true
+  group_by_modality_length: false
+  label_smoothing_factor: 0
+  learning_rate: 0.001
+  load_best_model_at_end: true
+  logging_steps: 10
+  lora_alpha: 16
+  lora_bias: none
+  lora_dropout: 0.05
+  lora_enable: false
+  lora_r: 64
+  lora_weight_path: ''
+  lr_scheduler_type: cosine
+  metric_for_best_model: eval_loss
+  model_max_length: 2048
+  num_train_epochs: 1000000
+  output_dir: signllava/checkpoints/brutal_overfit-7855193
+  per_device_eval_batch_size: 1
+  per_device_train_batch_size: 1
+  quant_type: nf4
+  resume_from_checkpoint: false
+  save_steps: 10
+  save_strategy: steps
+  save_total_limit: 5
+  seed: 42
+  weight_decay: 0.1

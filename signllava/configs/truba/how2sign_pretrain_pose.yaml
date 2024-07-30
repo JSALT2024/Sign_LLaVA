@@ -6,9 +6,9 @@ TrainingArguments:
   output_dir: /truba/scratch/msaraclar/signllava/output/
   model_max_length: 2048
   bf16: True
-  # per_device_train_batch_size: 1
-  # per_device_eval_batch_size: 1
-  auto_find_batch_size: True
+  per_device_train_batch_size: 2
+  per_device_eval_batch_size: 1
+  # auto_find_batch_size: True
   resume_from_checkpoint: False
   do_train: True
   do_eval: True
@@ -23,7 +23,7 @@ TrainingArguments:
   weight_decay: 0.1
   dataloader_num_workers: 7
   num_train_epochs: 75
-  learning_rate: 0.0005
+  learning_rate: 0.00001
   label_smoothing_factor: 0.0
   lr_scheduler_type: linear
   gradient_checkpointing: True
@@ -80,14 +80,14 @@ SignModelArguments:
 SignMultiTaskArguments: # make sure the sum of sample weights is 1
   translation:
     enable: True
-    sample_weight: 0.4 #0.4
+    sample_weight: 0.7 #0.4
   one_word_present:
     enable: True
-    sample_weight: 0.2 #0.2
+    sample_weight: 0.1 #0.2
   multi_word_present:
     enable: True
-    sample_weight: 0.2 #0.2
+    sample_weight: 0.1 #0.2
     max_num_words: 5 
   is_reversed:
     enable: True
-    sample_weight: 0.2 #0.2
+    sample_weight: 0.1 #0.2

@@ -63,7 +63,7 @@ date
 export HF_TOKEN="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"
 export WANDB_API_KEY="45373c78d8dfa3b3cfd4694785b7f1f0ffbcf570"
 export WANDB_ENTITY="jsalt2024-slt"
-export WANDB_PROJECT="YASL"
+export WANDB_PROJECT="YTASL"
 export WANDB_RUN_NAME="llama3_8b_pre_10ep_sign2vec"
 
 echo "Start generating pointer file."

@@ -46,8 +46,8 @@ SignDataArguments:
   prelude_window_size: 0 #number of sentences at the beginning of the discourse 
   data_dir: /localscratch/msaraclar/signllava_s2v/YASL
   annotation_path:
-    train: yt.annotations.train.json
-    dev: yt.annotations.dev.json
+    train: YT.annotations.train.json
+    dev: YT.annotations.dev.json
   visual_features:
     sign2vec:
       enable_input: True

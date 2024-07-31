@@ -54,6 +54,7 @@ def load_pretrained_model(config, use_flash_attn=False, device_map="auto", devic
                 config=lora_cfg_pretrained, 
                 sign_model_args=config['SignModelArguments'],
                 sign_data_args=config['SignDataArguments'],
+                local_files_only=True
                 **kwargs)
         tokenizer.add_tokens([DEFAULT_VIDEO_START_TOKEN, DEFAULT_VIDEO_END_TOKEN], special_tokens=True)
         model.resize_token_embeddings(len(tokenizer))

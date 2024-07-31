@@ -34,12 +34,12 @@ SignDataArguments:
   on_the_fly_predicted_context: False
   context_window_size: 0 #number of preceding sentences
   prelude_window_size: 0 #number of sentences at the beginning of the discourse 
-  data_dir: /ssd1/karahan/How2Sign/
-  annotation_path: /ssd1/karahan/How2Sign/h2s.annotations.train.json
+  data_dir: /ssd1/karahan/YASL/
+  annotation_path: /ssd1/karahan/YASL/YT.annotations.train.json
   visual_features:
     sign2vec:
       enable_input: True
-      test: sign2vec/sign2vec-yasl-sc-sc-64-8-d1_layer=-1/metadata_sign2vec.train.json
+      test: sign2vec/metadata_sign2vec.train.json
     mae:
       enable_input: False
       test: mae/metadata_mae.train.json

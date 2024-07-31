@@ -34,8 +34,8 @@ SignDataArguments:
   on_the_fly_predicted_context: False
   context_window_size: 0 #number of preceding sentences
   prelude_window_size: 0 #number of sentences at the beginning of the discourse 
-  data_dir: /ssd1/karahan/YASL/
-  annotation_path: /ssd1/karahan/YASL/YT.annotations.train.json
+  data_dir: /ssd2/karahan/YASL/
+  annotation_path: /ssd2/karahan/YASL/YT.annotations.train.json
   visual_features:
     sign2vec:
       enable_input: True

@@ -1,4 +1,3 @@
-
 GenerateArguments:
   model_path: /ssd2/karahan/YASL/293230-checkpoint-55000/
   checkpoint_num: 20

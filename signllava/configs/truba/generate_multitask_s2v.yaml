@@ -1,5 +1,5 @@
 GenerateArguments:
-  model_path: /ssd2/karahan/YASL/293230-checkpoint-55000/
+  model_path: /ssd2/karahan/YASL/model_yasl
   checkpoint_num: 55000
   num_datapoints: -1
   task: translation # one_word_present, multi_word_present, translation, is_reversed 

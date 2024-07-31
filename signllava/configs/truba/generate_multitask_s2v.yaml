@@ -35,11 +35,11 @@ SignDataArguments:
   context_window_size: 0 #number of preceding sentences
   prelude_window_size: 0 #number of sentences at the beginning of the discourse 
   data_dir: /ssd2/karahan/YASL/293230-checkpoint-55000/
-  annotation_path: h2s.annotation.train.json
+  annotation_path: h2s.annotations.dev.json
   visual_features:
     sign2vec:
       enable_input: True
-      test: sign2vec/metadata_sign2vec.train.json
+      test: sign2vec/metadata_sign2vec.dev.json
     mae:
       enable_input: False
       test: mae/metadata_mae.train.json

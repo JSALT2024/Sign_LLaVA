@@ -70,16 +70,16 @@ SignModelArguments:
     pretrained_projector_ckpt: /truba/scratch/msaraclar/signllava/output/293230-checkpoint-55000/global_step55000/mp_rank_00_model_states.pt
     sign2vec: 
       dim: 768
-      projector_type: linear
+      projector_type: mlp1x_gelu
     mae: 
       dim: 768
-      projector_type: linear
+      projector_type: mlp1x_gelu
     dino: 
       dim: 1152
-      projector_type: linear
+      projector_type: mlp1x_gelu
     pose: 
       dim: 208
-      projector_type: linear
+      projector_type: mlp1x_gelu
 SignMultiTaskArguments: # make sure the sum of sample weights is 1
   translation:
     enable: True

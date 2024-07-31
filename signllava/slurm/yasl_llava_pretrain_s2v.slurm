@@ -6,9 +6,9 @@
 #SBATCH --error=slurm/%A.err
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --gres=gpu:4
-#SBATCH --cpus-per-task=64
-#SBATCH	--time=72:00:00
+#SBATCH --gres=gpu:2
+#SBATCH --cpus-per-task=32
+#SBATCH	--time=24:00:00
 #SBATCH --chdir=/truba/scratch/msaraclar/Sign_LLaVA
 ###SBATCH --mal-user= your_email_address
 ###SBATCH --mail-type=BEGIN,END,FAIL

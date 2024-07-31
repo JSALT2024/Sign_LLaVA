@@ -39,7 +39,7 @@ SignDataArguments:
   visual_features:
     sign2vec:
       enable_input: True
-      test: sign2vec/sign2vec-yasl-sc-sc-64-8-d1_layer=-1/metadata_sign2vec.dev.json
+      test: sign2vec/sign2vec-yasl-sc-sc-64-8-d1_layer=-1/metadata_sign2vec.dev.0.json
     mae:
       enable_input: False
       test: mae/metadata_mae.train.json

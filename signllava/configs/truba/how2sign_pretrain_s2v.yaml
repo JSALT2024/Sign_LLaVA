@@ -39,6 +39,8 @@ TrainingArguments:
   group_by_modality_length: False
   seed: 42
   data_seed: 42
+  warmup_ratio: 0.03
+  warmup_steps: 0
 SignDataArguments:
   context_window_size: 0 #number of preceding sentences
   prelude_window_size: 0 #number of sentences at the beginning of the discourse 

@@ -1,6 +1,6 @@
 
 GenerateArguments:
-  model_path: 293230-checkpoint-55000/
+  model_path: /ssd2/karahan/YASL/293230-checkpoint-55000/
   checkpoint_num: 20
   num_datapoints: -1
   task: translation # one_word_present, multi_word_present, translation, is_reversed 
@@ -35,8 +35,8 @@ SignDataArguments:
   on_the_fly_predicted_context: False
   context_window_size: 0 #number of preceding sentences
   prelude_window_size: 0 #number of sentences at the beginning of the discourse 
-  data_dir: 
-  annotation_path: annotation.train.json
+  data_dir: /ssd2/karahan/YASL/293230-checkpoint-55000/
+  annotation_path: h2s.annotation.train.json
   visual_features:
     sign2vec:
       enable_input: True
@@ -54,16 +54,16 @@ SignModelArguments:
   projectors:
     sign2vec: 
       dim: 768
-      projector_type: linear #mlp2x_gelu
+      projector_type: mlp1x_gelu #mlp2x_gelu
     mae: 
       dim: 768
-      projector_type: linear #mlp2x_gelu
+      projector_type: mlp1x_gelu #mlp2x_gelu
     dino: 
       dim: 1152
-      projector_type: linear #mlp2x_gelu
+      projector_type: mlp1x_gelu #mlp2x_gelu
     pose: 
       dim: 208
-      projector_type: linear #mlp2x_gelu
+      projector_type: mlp1x_gelu #mlp2x_gelu
 SignMultiTaskArguments: 
   multi_word_present:
     max_num_words: 5 

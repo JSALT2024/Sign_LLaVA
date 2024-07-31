@@ -62,7 +62,7 @@ SignDataArguments:
       train: dino/metadata_dino.train.json
       dev: dino/metadata_dino.dev.json
     pose:
-      enable_input: True
+      enable_input: False
       train: pose/metadata_pose.train.json
       dev: pose/metadata_pose.dev.json
 SignModelArguments:

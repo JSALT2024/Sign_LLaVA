@@ -374,7 +374,6 @@ class SignContextDataset(Dataset):
         video_token = DEFAULT_VIDEO_START_TOKEN + DEFAULT_VIDEO_TOKEN + DEFAULT_VIDEO_END_TOKEN
 
         sampled_task, text_prompt, response = self.get_task_prompt(video_id, clip_name, context)
-        import pdb; pdb.set_trace()
 
         # get the visual features
         visual_features = {}

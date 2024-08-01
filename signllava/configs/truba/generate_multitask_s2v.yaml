@@ -1,5 +1,5 @@
 GenerateArguments:
-  model_path: /ssd1/karahan/How2Sign/293132/checkpoint-3000
+  model_path: /ssd1/karahan/How2Sign/293132/
   checkpoint_num: 3000
   num_datapoints: -1
   task: translation # one_word_present, multi_word_present, translation, is_reversed 

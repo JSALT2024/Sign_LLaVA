@@ -39,7 +39,7 @@ SignDataArguments:
   visual_features:
     sign2vec:
       enable_input: True
-      test: sign2vec/metadata_sign2vec.dev.json
+      test: sign2vec/metadata_sign2vec.train.json
     mae:
       enable_input: False
       test: mae/metadata_mae.train.json

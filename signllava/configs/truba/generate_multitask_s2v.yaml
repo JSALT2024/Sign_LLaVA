@@ -35,11 +35,11 @@ SignDataArguments:
   context_window_size: 0 #number of preceding sentences
   prelude_window_size: 0 #number of sentences at the beginning of the discourse 
   data_dir: /ssd2/karahan/YASL/
-  annotation_path: /ssd2/karahan/YASL/YT.annotations.train.json
+  annotation_path: /ssd2/karahan/YASL/YT.annotations.dev.json
   visual_features:
     sign2vec:
       enable_input: True
-      test: sign2vec/metadata_sign2vec.train.json
+      test: sign2vec/metadata_sign2vec.dev.json
     mae:
       enable_input: False
       test: mae/metadata_mae.train.json

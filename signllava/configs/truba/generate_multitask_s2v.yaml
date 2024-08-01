@@ -1,6 +1,6 @@
 GenerateArguments:
-  model_path: /ssd2/karahan/YASL/model_yasl
-  checkpoint_num: 55000
+  model_path: /ssd2/murat/truba/293132/
+  checkpoint_num: 3000
   num_datapoints: -1
   task: translation # one_word_present, multi_word_present, translation, is_reversed 
   generate_des: generation.translation.eval.json
@@ -34,8 +34,8 @@ SignDataArguments:
   on_the_fly_predicted_context: False
   context_window_size: 0 #number of preceding sentences
   prelude_window_size: 0 #number of sentences at the beginning of the discourse 
-  data_dir: /ssd2/karahan/YASL/
-  annotation_path: /ssd2/karahan/YASL/YT.annotations.dev.json
+  data_dir: /ssd1/karahan/How2Sign/
+  annotation_path: /ssd1/karahan/How2Sign/h2s.annotations.dev.json
   visual_features:
     sign2vec:
       enable_input: True

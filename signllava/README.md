@@ -110,6 +110,9 @@ bash signllava/scripts/pretrain.sh
 ```
 bits: 16
 lora_enable: False
+
+# optional:
+freeze_embed_tokens: True
 ```
 # Fine-tuning
 1. Configuration file: 
@@ -125,6 +128,9 @@ bash signllava/scripts/finetune.sh
 bits: 4
 lora_enable: True
 pretrained_projector_ckpt: ${checkpoint_from_pretraining}/mp_rank_00_model_states.pt
+
+#optional
+freeze_embed_tokens: False
 ```
 
 # Run generation
@@ -139,7 +145,7 @@ SignDataArguments:
     context_window_size: 0
     prelude_window_size: 0
 ```
-2. Generate with context
+2. Generate with ground-truth context
 ```
 SignDataArguments:
     prepared_predicted_context: False 

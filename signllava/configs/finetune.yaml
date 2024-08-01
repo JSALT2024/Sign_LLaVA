@@ -2,6 +2,7 @@ ModelArguments:
   model_name_or_path: meta-llama/Meta-Llama-3-8B-Instruct #meta-llama/Meta-Llama-3-70B-Instruct #
   version: llava_sign_llama_3
   tune_mm_mlp_adapter: True
+  freeze_embed_tokens: False
 TrainingArguments:
   output_dir: signllava/checkpoints/finetune_multitask
   model_max_length: 2048

@@ -235,6 +235,7 @@ class SignLlavaForCausalLM(ABC): # adapted from LlavaMetaForCausalLM(ABC)
         num_new_tokens = tokenizer.add_tokens([DEFAULT_VIDEO_START_TOKEN, DEFAULT_VIDEO_END_TOKEN], special_tokens=True)
         self.resize_token_embeddings(len(tokenizer))
 
+        '''
         if num_new_tokens > 0:
             input_embeddings = self.get_input_embeddings().weight.data
             output_embeddings = self.get_output_embeddings().weight.data
@@ -246,12 +247,7 @@ class SignLlavaForCausalLM(ABC): # adapted from LlavaMetaForCausalLM(ABC)
 
             input_embeddings[-num_new_tokens:] = input_embeddings_avg
             output_embeddings[-num_new_tokens:] = output_embeddings_avg
-
-        if model_args.tune_mm_mlp_adapter:
-            for p in self.get_input_embeddings().parameters():
-                p.requires_grad = True
-            for p in self.get_output_embeddings().parameters():
-                p.requires_grad = False
+        '''
 
         pretrained_ckpt = sign_model_args['projectors'].get("pretrained_projector_ckpt", None)
         if pretrained_ckpt:
@@ -265,3 +261,18 @@ class SignLlavaForCausalLM(ABC): # adapted from LlavaMetaForCausalLM(ABC)
                 input_embeddings[-num_new_tokens:] = embed_tokens_weight
             else:
                 raise ValueError(f"Unexpected embed_tokens_weight shape. Pretrained: {embed_tokens_weight.shape}. Current: {input_embeddings.shape}. Numer of new tokens: {num_new_tokens}.")
+
+        if model_args.tune_mm_mlp_adapter:
+            if model_args.freeze_embed_tokens:
+                for p in self.get_input_embeddings().parameters():
+                    p.requires_grad = False
+            else:
+                for p in self.get_input_embeddings().parameters():
+                    p.requires_grad = True
+            for p in self.get_output_embeddings().parameters():
+                p.requires_grad = False
+        
+        '''
+        if num_new_tokens > 0:
+            self.get_input_embeddings().weight[-num_new_tokens:].requires_grad = True
+        '''

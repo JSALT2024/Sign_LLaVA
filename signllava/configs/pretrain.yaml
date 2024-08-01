@@ -1,9 +1,10 @@
 ModelArguments:
-  model_name_or_path: meta-llama/Meta-Llama-3-8B-Instruct #meta-llama/Meta-Llama-3-70B-Instruct #
+  model_name_or_path: meta-llama/Meta-Llama-3-8B-Instruct #meta-llama/Meta-Llama-3-8B #meta-llama/Meta-Llama-3-70B-Instruct #
   version: llava_sign_llama_3
   tune_mm_mlp_adapter: True
+  freeze_embed_tokens: True
 TrainingArguments:
-  output_dir: signllava/checkpoints/pretrain_multitask
+  output_dir: signllava/checkpoints/pretrained_test_freeze_embed #pretrain_how2sign_pose_base_nopar_2mlp
   bf16: True
   per_device_train_batch_size: 1
   per_device_eval_batch_size: 1
@@ -13,16 +14,16 @@ TrainingArguments:
   do_eval: True
   evaluation_strategy: steps
   save_strategy: steps
-  eval_steps: 5
-  save_steps: 5
-  logging_steps: 5
-  num_train_epochs: 80
+  eval_steps: 10
+  save_steps: 10
+  logging_steps: 10
+  num_train_epochs: 40
   metric_for_best_model: eval_loss
   load_best_model_at_end: True
-  save_total_limit: 5
+  save_total_limit: 2
   weight_decay: 0.1
   warmup_ratio: 0
-  dataloader_num_workers: 0
+  dataloader_num_workers: 4
   learning_rate: 0.002
   label_smoothing_factor: 0.1
   lr_scheduler_type: cosine

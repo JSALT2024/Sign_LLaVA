@@ -57,6 +57,7 @@ class ModelArguments:
     version: Optional[str] = field(default="v0")
     freeze_backbone: bool = field(default=False)
     tune_mm_mlp_adapter: bool = field(default=False)
+    freeze_embed_tokens: bool = field(default=False)
     pretrain_mm_mlp_adapter: Optional[str] = field(default=None)
 
 @dataclass
@@ -636,7 +637,7 @@ def train(attn_implementation=None):
                 cache_dir=training_args.cache_dir,
                 attn_implementation=attn_implementation,
                 torch_dtype=(torch.bfloat16 if training_args.bf16 else None),
-                local_files_only=True,
+                #local_files_only=True,
                 sign_model_args=sign_model_args,
                 sign_data_args=sign_data_args,
                 **bnb_model_from_pretrained_args

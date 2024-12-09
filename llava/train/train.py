@@ -14,95 +14,45 @@
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
 
+import json
+import logging
 import os
-import copy
+import h5py
+import pathlib
 import random
 import shutil
-from dataclasses import dataclass, field
-import json
-import h5py
-import yaml
 from collections import defaultdict
-import logging
-import pathlib
+from dataclasses import dataclass, field
+from typing import Dict, Sequence
+from operator import itemgetter
+
 import numpy
-from typing import Dict, Optional, Sequence, List
-
-import torch
-
-import transformers
-from transformers import set_seed
 import tokenizers
-
-from llava.constants import *
+import torch
+import transformers
+import yaml
 from torch.utils.data import Dataset
-from llava.train.llava_trainer import LLaVATrainer
+from transformers import set_seed
 
 from llava import conversation as conversation_lib
-from llava.model import *
+from llava.constants import *
 from llava.mm_utils import tokenizer_video_token
+from llava.model import *
+from llava.train.llava_trainer import LLaVATrainer
+from llava.train.args_utils import ModelArguments, TrainingArguments, prepare_bnb_args
 
 local_rank = None
+
 
 def rank0_print(*args):
     if local_rank == 0:
         print(*args)
 
+
 from packaging import version
+
 IS_TOKENIZER_GREATER_THAN_0_14 = version.parse(tokenizers.__version__) >= version.parse('0.14')
 
-@dataclass
-class ModelArguments:
-    model_name_or_path: Optional[str] = field(default="meta/Meta-Llama-3-8B-Instruct")
-    version: Optional[str] = field(default="v0")
-    freeze_backbone: bool = field(default=False)
-    tune_mm_mlp_adapter: bool = field(default=False)
-    freeze_embed_tokens: bool = field(default=False)
-    pretrain_mm_mlp_adapter: Optional[str] = field(default=None)
-
-@dataclass
-class TrainingArguments(transformers.TrainingArguments):
-    cache_dir: Optional[str] = field(default=None)
-    output_dir: Optional[str] = field(default=".")
-    bf16: bool = field(default=True)
-    report_to: Optional[str] = field(default="wandb")
-    #gradient_accumulation_steps: Optional[int] = field(default=1)
-    evaluation_strategy: Optional[str] = field(default="steps")
-    metric_for_best_model: Optional[str] = field(default=None)
-    optim: str = field(default="adamw_torch")
-    remove_unused_columns: bool = field(default=False)
-    freeze_mm_mlp_adapter: bool = field(default=False)
-    mpt_attn_impl: Optional[str] = field(default="triton")
-    resume_from_checkpoint: bool = field(default=False)
-    run_name: Optional[str] = field(default=None)
-    label_smoothing_factor: Optional[float] = field(default=0.1)
-    model_max_length: int = field(
-        default=512,
-        metadata={
-            "help":
-            "Maximum sequence length. Sequences will be right padded (and possibly truncated)."
-        },
-    )
-    double_quant: bool = field(
-        default=True,
-        metadata={"help": "Compress the quantization statistics through double quantization."}
-    )
-    quant_type: str = field(
-        default="nf4",
-        metadata={"help": "Quantization data type to use. Should be one of `fp4` or `nf4`."}
-    )
-    bits: int = field(
-        default=16,
-        metadata={"help": "How many bits to use."}
-    )
-    lora_enable: bool = False
-    lora_r: int = 64
-    lora_alpha: int = 16
-    lora_dropout: float = 0.05
-    lora_weight_path: str = ""
-    lora_bias: str = "none"
-    mm_projector_lr: Optional[float] = None
-    group_by_modality_length: bool = field(default=False)
 
 @dataclass
 class ExtraArguments:
@@ -123,10 +73,12 @@ def maybe_zero_3(param, ignore_status=False, name=None):
         param = param.detach().cpu().clone()
     return param
 
+
 def get_mm_adapter_state_maybe_zero_3(named_params, keys_to_match):
     to_return = {k: t for k, t in named_params if any(key_match in k for key_match in keys_to_match)}
     to_return = {k: maybe_zero_3(v, ignore_status=True).cpu() for k, v in to_return.items()}
     return to_return
+
 
 def find_all_linear_names(model, skip_modules):
     cls = torch.nn.Linear
@@ -139,9 +91,10 @@ def find_all_linear_names(model, skip_modules):
             names = name.split('.')
             lora_module_names.add(names[0] if len(names) == 1 else names[-1])
 
-    if 'lm_head' in lora_module_names: # needed for 16-bit
+    if 'lm_head' in lora_module_names:  # needed for 16-bit
         lora_module_names.remove('lm_head')
     return list(lora_module_names)
+
 
 def smart_tokenizer_and_embedding_resize(
     special_tokens_dict: Dict,
@@ -194,6 +147,7 @@ def _tokenize_fn(strings: Sequence[str],
         labels_lens=labels_lens,
     )
 
+
 def preprocess_multimodal(
     sources: Sequence[str]
 ) -> Dict:
@@ -202,6 +156,7 @@ def preprocess_multimodal(
             replace_token = DEFAULT_VIDEO_START_TOKEN + DEFAULT_VIDEO_TOKEN + DEFAULT_VIDEO_END_TOKEN
             sentence["value"] = sentence["value"].replace(DEFAULT_VIDEO_TOKEN, replace_token)
     return sources
+
 
 def preprocess_llama_3(
     source,
@@ -219,38 +174,39 @@ def preprocess_llama_3(
         conv.append_message(role, sentence["value"])
     conversations.append(conv.get_prompt())
     # Tokenize conversations
-    input_ids = torch.stack([tokenizer_video_token(prompt, tokenizer, return_tensors='pt') for prompt in conversations], dim=0)
+    input_ids = torch.stack([tokenizer_video_token(prompt, tokenizer, return_tensors='pt') for prompt in conversations],
+                            dim=0)
     targets = input_ids.clone()
 
     assert conv.sep_style == conversation_lib.SeparatorStyle.LLAMA_3
 
     # Mask targets
-    # targets: masked input_ids, where only the assitant inputs are kept, 
+    # targets: masked input_ids, where only the assitant inputs are kept,
     #          and all the previous tokens are masked with IGNORE_INDEX -100
     assistant_header = "<|start_header_id|>assistant<|end_header_id|>\n\n"
     bot = "<|begin_of_text|>"
-    eot = "<|eot_id|>" 
-    
+    eot = "<|eot_id|>"
+
     assistant_header_len = len(tokenizer_video_token(assistant_header, tokenizer))
     for conversation, target in zip(conversations, targets):
         cur_len = 0
         # targets: labels of assistant output
-        total_len = int(target.ne(tokenizer.pad_token_id).sum()) # the length of non-target (non-labels)
+        total_len = int(target.ne(tokenizer.pad_token_id).sum())  # the length of non-target (non-labels)
         # cur_len: the length of non-target parts
         parts = conversation.split(assistant_header)
         cur_len += len(tokenizer_video_token(parts[0], tokenizer))
         target[:cur_len] = IGNORE_INDEX
         for part in parts[1:]:
             if part != "":
-                target[cur_len:cur_len+assistant_header_len] = IGNORE_INDEX
+                target[cur_len:cur_len + assistant_header_len] = IGNORE_INDEX
                 cur_len += assistant_header_len
                 response_eot_id = part.find(eot)
                 response_len = len(tokenizer_video_token(part[:response_eot_id], tokenizer)) + 1
                 cur_len += response_len
                 if cur_len < total_len:
-                    part_res = part[response_eot_id+len(eot)+1:]
+                    part_res = part[response_eot_id + len(eot) + 1:]
                     part_res_len = len(tokenizer_video_token(part_res, tokenizer))
-                    target[cur_len:cur_len+part_res_len] = IGNORE_INDEX
+                    target[cur_len:cur_len + part_res_len] = IGNORE_INDEX
                     cur_len += part_res_len
         if cur_len != total_len:
             target[:] = IGNORE_INDEX
@@ -263,13 +219,15 @@ def preprocess_llama_3(
         labels=targets,
     )
 
+
 class SignContextDataset(Dataset):
     """Dataset for supervised training for sign language translation with context."""
+
     def __init__(self, tokenizer: transformers.PreTrainedTokenizer,
                  sign_data_args: dict,
                  sign_multi_task_args: dict,
-                 sign_multi_task_eval_args: dict=None,
-                 split: str='train'):
+                 sign_multi_task_eval_args: dict = None,
+                 split: str = 'train'):
         super(SignContextDataset, self).__init__()
         self.sign_data_args = sign_data_args
         self.sign_multi_task_args = sign_multi_task_args
@@ -277,7 +235,7 @@ class SignContextDataset(Dataset):
         self.tokenizer = tokenizer
         self.split = split
         data_dir = sign_data_args['data_dir']
-        self.tasks = self.get_tasks() # {"translation": 0.4, "one_word_present": 0.2, "multi_word_present": 0.2, "is_reversed": 0.2}
+        self.tasks = self.get_tasks()  # {"translation": 0.4, "one_word_present": 0.2, "multi_word_present": 0.2, "is_reversed": 0.2}
         if self.sign_multi_task_eval_args is not None:
             self.eval_tasks = self.get_tasks_eval()
 
@@ -292,8 +250,8 @@ class SignContextDataset(Dataset):
         # {{video_id: {clip_id: {"translation": ..., "paraphrases": [A, B, C] }}},
         # }
         # self.list_data: i -> (video_id, clip_id)
-        self.list_data = [] # [(video_id, clip_id), ...]
-        
+        self.list_data = []  # [(video_id, clip_id), ...]
+
         # build keyword vocabulary
         self.keyword_vocabulary = {}
         for video_id in self.annotation:
@@ -309,8 +267,8 @@ class SignContextDataset(Dataset):
         self.clip_order_from_int = {}
         for video_id in self.annotation.keys():
             co = self.annotation[video_id]['clip_order']
-            self.clip_order_from_int[video_id] =  dict(zip(range(len(co)),co))
-            self.clip_order_to_int[video_id] =  dict(zip(co,range(len(co))))
+            self.clip_order_from_int[video_id] = dict(zip(range(len(co)), co))
+            self.clip_order_to_int[video_id] = dict(zip(co, range(len(co))))
 
         for video_id, clip_dict in self.annotation.items():
             for clip_name in clip_dict:
@@ -345,9 +303,10 @@ class SignContextDataset(Dataset):
                 self.remove_missing_annotation(h5_video_clip)
             else:
                 exec(f"self.{input_type}=None")
-        # self.sign2vec_train: {video_id: {clip_id: R(NxV), clip_id:...}, ..., ...}, 
+        # self.sign2vec_train: {video_id: {clip_id: R(NxV), clip_id:...}, ..., ...},
         #   {video_id: ........}}}
         # self.sign2vec_dev: ...
+
     def __len__(self):
         return len(self.list_data)
 
@@ -355,21 +314,21 @@ class SignContextDataset(Dataset):
         video_id, clip_id = self.list_data[i]
         # sources: json, 'image': 'train/06December_2011_Tuesday_tagesschau-6843'
         clip_name = self.clip_order_from_int[video_id][clip_id]
-        # Get context: concatenate preceding sentences, 
+        # Get context: concatenate preceding sentences,
         # the number of sentences is defined by data_args.context_window_size
         context = []
         total_num_preceding_sents = clip_id
         context_window_size = self.sign_data_args['context_window_size']
         prelude_window_size = self.sign_data_args['prelude_window_size']
-        if total_num_preceding_sents >=  context_window_size + prelude_window_size:
+        if total_num_preceding_sents >= context_window_size + prelude_window_size:
             preceding_ids = list(range(prelude_window_size)) + \
-                            list(range(clip_id-context_window_size, clip_id))
+                            list(range(clip_id - context_window_size, clip_id))
         else:
             preceding_ids = range(total_num_preceding_sents)
-        for ci in preceding_ids:    
+        for ci in preceding_ids:
             preceding_clip_name = self.clip_order_from_int[video_id][ci]
             context.append(self.annotation[video_id][preceding_clip_name]['translation'])
-        
+
         src = {}
         src['id'] = "({0},{1})".format(str(video_id), str(clip_id))
         video_token = DEFAULT_VIDEO_START_TOKEN + DEFAULT_VIDEO_TOKEN + DEFAULT_VIDEO_END_TOKEN
@@ -386,18 +345,18 @@ class SignContextDataset(Dataset):
                 if sampled_task == "is_reversed" and response == "yes":
                     vf = vf.flip(0)
                 visual_features[input_type] = vf
-            
-        src['conversations'] = [{'from': 'human', 
-                'value':video_token+'\n'+text_prompt},
-                {'from': 'gpt',
-                'value':response}]
+
+        src['conversations'] = [{'from': 'human',
+                                 'value': video_token + '\n' + text_prompt},
+                                {'from': 'gpt',
+                                 'value': response}]
 
         # <video> -> <video_start><video><video_end>
         data_dict = preprocess_llama_3(src, self.tokenizer)
         data_dict = dict(input_ids=data_dict["input_ids"][0],
                          labels=data_dict["labels"][0])
         data_dict['visual_features'] = visual_features
-        video_sep = DEFAULT_VIDEO_END_TOKEN+DEFAULT_VIDEO_START_TOKEN
+        video_sep = DEFAULT_VIDEO_END_TOKEN + DEFAULT_VIDEO_START_TOKEN
         data_dict['video_sep_ids'] = tokenizer_video_token(video_sep, self.tokenizer, return_tensors='pt')
         return data_dict
 
@@ -409,8 +368,8 @@ class SignContextDataset(Dataset):
             exec(f"self.{input_type} = dict()")
             print(f"{input_type}: {self.split} data is loaded from: ")
             for k in set(self.h5shard[self.split][input_type].values()):
-                h5file = os.path.join(data_dir, json_filename.replace('metadata_','').replace('.json',".%s.h5"%k))
-                print("--" + h5file) #,k,json_filename,data_dir)
+                h5file = os.path.join(data_dir, json_filename.replace('metadata_', '').replace('.json', ".%s.h5" % k))
+                print("--" + h5file)  # ,k,json_filename,data_dir)
                 exec(f"self.{input_type}[k] = h5py.File(h5file, 'r')")
 
                 for vi in eval(f"self.{input_type}[k]").keys():
@@ -420,27 +379,26 @@ class SignContextDataset(Dataset):
                                 clip_id = self.clip_order_to_int[vi][ci]
                                 h5_video_clip.add((vi, clip_id))
         return h5_video_clip
-    
 
     def remove_missing_annotation(self, h5_video_clip):
         annotations_to_delete = set(self.list_data) - h5_video_clip
         for a in annotations_to_delete:
             self.list_data.remove(a)
-    
+
     def get_tasks(self):
         tasks = {}
         for task in self.sign_multi_task_args:
             if self.sign_multi_task_args[task]['sample_weight'] > 0:
                 tasks[task] = self.sign_multi_task_args[task]['sample_weight']
         return tasks
-    
+
     def get_tasks_eval(self):
         tasks = {}
         for task in self.sign_multi_task_eval_args:
             if self.sign_multi_task_eval_args[task]['sample_weight'] > 0:
                 tasks[task] = self.sign_multi_task_eval_args[task]['sample_weight']
         return tasks
-    
+
     def get_task_prompt(self, video_id, clip_name, context):
         # {"translation": 0.4, "one_word_present": 0.2, "multi_word_present": 0.2, "is_reversed": 0.2}
         clip_dict = self.annotation[video_id][clip_name]
@@ -448,8 +406,9 @@ class SignContextDataset(Dataset):
             if self.split == 'train':
                 sampled_task = random.choices(list(self.tasks.keys()), weights=list(self.tasks.values()), k=1)[0]
             else:
-                sampled_task = random.choices(list(self.eval_tasks.keys()), weights=list(self.eval_tasks.values()), k=1)[0]
-            if sampled_task == "translation": 
+                sampled_task = \
+                    random.choices(list(self.eval_tasks.keys()), weights=list(self.eval_tasks.values()), k=1)[0]
+            if sampled_task == "translation":
                 if self.sign_data_args.get('use_paraphrases', False):
                     translation = random.choice(clip_dict['paraphrases'] + [clip_dict['translation']])
                 else:
@@ -479,8 +438,8 @@ class SignContextDataset(Dataset):
                 num_keywords = random.randint(2, self.sign_multi_task_args['multi_word_present']['max_num_words'])
                 chosen_keywords = []
                 responses = []
-                #num_positive_keywords = random.randint(0, min(len(keywords), num_keywords))
-                num_positive_keywords = min(len(keywords), int(num_keywords/2))
+                # num_positive_keywords = random.randint(0, min(len(keywords), num_keywords))
+                num_positive_keywords = min(len(keywords), int(num_keywords / 2))
                 num_negative_keywords = num_keywords - num_positive_keywords
                 if num_positive_keywords > 0:
                     positive_keywords = random.sample(keywords, num_positive_keywords)
@@ -494,7 +453,7 @@ class SignContextDataset(Dataset):
                             negative_keyword = random.choice(list(self.keyword_vocabulary.keys()))
                         chosen_keywords.append(negative_keyword)
                         responses.append("no")
-                #shuffled_responses, shuffled_keywords = zip(*random.sample(list(zip(responses, chosen_keywords)), len(responses)))
+                # shuffled_responses, shuffled_keywords = zip(*random.sample(list(zip(responses, chosen_keywords)), len(responses)))
                 # order keywords by alphabetical order
                 chosen_keywords = [w.lower() for w in chosen_keywords]
                 sorted_pairs = sorted(zip(responses, chosen_keywords), key=lambda x: x[1])
@@ -513,6 +472,7 @@ class SignContextDataset(Dataset):
             sampled_task = "translation"
         return sampled_task, text_prompt, response
 
+
 @dataclass
 class DataCollatorForSupervisedDataset(object):
     """Collate examples for supervised fine-tuning."""
@@ -521,7 +481,8 @@ class DataCollatorForSupervisedDataset(object):
 
     def __call__(self, instances: Sequence[Dict]) -> Dict[str, torch.Tensor]:
         input_ids, labels, video_sep_ids, visual_features = tuple([instance[key] for instance in instances]
-                                  for key in ("input_ids", "labels", "video_sep_ids", "visual_features"))
+                                                                  for key in ("input_ids", "labels", "video_sep_ids",
+                                                                              "visual_features"))
         input_ids = torch.nn.utils.rnn.pad_sequence(
             input_ids,
             batch_first=True,
@@ -547,28 +508,30 @@ def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer,
                                 sign_multi_task_eval_args) -> Dict:
     """Make dataset and collator for supervised fine-tuning."""
     train_dataset = SignContextDataset(
-        tokenizer = tokenizer,
-        sign_data_args = sign_data_args,
-        sign_multi_task_args = sign_multi_task_args,
-        sign_multi_task_eval_args = sign_multi_task_eval_args,
-        split = "train"
+        tokenizer=tokenizer,
+        sign_data_args=sign_data_args,
+        sign_multi_task_args=sign_multi_task_args,
+        sign_multi_task_eval_args=sign_multi_task_eval_args,
+        split="train"
     )
     dev_dataset = SignContextDataset(
-        tokenizer = tokenizer,
-        sign_data_args = sign_data_args,
-        sign_multi_task_args = sign_multi_task_args,
-        sign_multi_task_eval_args = sign_multi_task_eval_args,
-        split = "dev"
+        tokenizer=tokenizer,
+        sign_data_args=sign_data_args,
+        sign_multi_task_args=sign_multi_task_args,
+        sign_multi_task_eval_args=sign_multi_task_eval_args,
+        split="dev"
     )
     data_collator = DataCollatorForSupervisedDataset(tokenizer=tokenizer)
     return dict(train_dataset=train_dataset,
                 eval_dataset=dev_dataset,
                 data_collator=data_collator)
 
+
 def update_arguments(arg_obj, yaml_dict):
     for k, v in yaml_dict.items():
         setattr(arg_obj, k, v)
-    
+
+
 def set_same_seed(seed):
     random.seed(seed)
     os.environ['PYTHONHASHSEED'] = str(seed)
@@ -578,11 +541,14 @@ def set_same_seed(seed):
     torch.backends.cudnn.deterministic = True
     set_seed(seed)
 
+
 def train(attn_implementation=None):
     global local_rank
+    # load default args
     parser = transformers.HfArgumentParser(
         (ModelArguments, TrainingArguments, ExtraArguments))
     model_args, training_args, extra_args = parser.parse_args_into_dataclasses()
+    # update args from yaml config
     with open(extra_args.yaml_args, 'r') as yaml_file:
         yaml_config = yaml.safe_load(yaml_file)
         update_arguments(model_args, yaml_config['ModelArguments'])
@@ -601,7 +567,7 @@ def train(attn_implementation=None):
 
     # set seed
     set_same_seed(training_args.seed)
-    
+
     local_rank = training_args.local_rank
     compute_dtype = (torch.float16 if training_args.fp16 else (torch.bfloat16 if training_args.bf16 else torch.float32))
 
@@ -617,21 +583,22 @@ def train(attn_implementation=None):
 
     # build model
     model = SignLlavaLlamaForCausalLM.from_pretrained(
-                model_args.model_name_or_path,
-                cache_dir=training_args.cache_dir,
-                attn_implementation=attn_implementation,
-                torch_dtype=(torch.bfloat16 if training_args.bf16 else None),
-                #local_files_only=True,
-                sign_model_args=sign_model_args,
-                sign_data_args=sign_data_args,
-                **bnb_model_from_pretrained_args
-            )
+        model_args.model_name_or_path,
+        cache_dir=training_args.cache_dir,
+        attn_implementation=attn_implementation,
+        torch_dtype=(torch.bfloat16 if training_args.bf16 else None),
+        # local_files_only=True,
+        sign_model_args=sign_model_args,
+        sign_data_args=sign_data_args,
+        **bnb_model_from_pretrained_args
+    )
 
     if model_args.freeze_backbone:
         model.model.requires_grad_(False)
     if training_args.bits in [4, 8]:
         from peft import prepare_model_for_kbit_training
-        model.config.torch_dtype=(torch.float32 if training_args.fp16 else (torch.bfloat16 if training_args.bf16 else torch.float32))
+        model.config.torch_dtype = (
+            torch.float32 if training_args.fp16 else (torch.bfloat16 if training_args.bf16 else torch.float32))
         model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=training_args.gradient_checkpointing)
 
     if training_args.gradient_checkpointing:
@@ -640,8 +607,9 @@ def train(attn_implementation=None):
         else:
             def make_inputs_require_grad(module, input, output):
                 output.requires_grad_(True)
+
             model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
-    
+
     # lora skip lm_head and projectors
     if training_args.lora_enable:
         from peft import LoraConfig, get_peft_model
@@ -669,10 +637,10 @@ def train(attn_implementation=None):
         use_fast=False,
     )
     if tokenizer.unk_token is None:
-        tokenizer.add_special_tokens({"unk_token":"<unk>"})
+        tokenizer.add_special_tokens({"unk_token": "<unk>"})
     tokenizer.pad_token = tokenizer.unk_token
     conversation_lib.default_conversation = conversation_lib.conv_templates[model_args.version]
-            
+
     model.config.tokenizer_padding_side = tokenizer.padding_side
     model.config.tokenizer_model_max_length = tokenizer.model_max_length
 
@@ -725,7 +693,7 @@ def train(attn_implementation=None):
                                               sign_data_args=sign_data_args,
                                               sign_multi_task_args=sign_multi_task_args,
                                               sign_multi_task_eval_args=sign_multi_task_eval_args)
-    
+
     param_update = set()
     for name, param in model.named_parameters():
         if param.requires_grad:
@@ -737,9 +705,9 @@ def train(attn_implementation=None):
 
     tokenizer.save_pretrained(output_dir)
     trainer = LLaVATrainer(model=model,
-                    tokenizer=tokenizer,
-                    args=training_args,
-                    **data_module)
+                           tokenizer=tokenizer,
+                           args=training_args,
+                           **data_module)
     # save the configuration.yaml
     if not training_args.resume_from_checkpoint:
         shutil.copy(extra_args.yaml_args, os.path.join(output_dir, "config.yaml"))
@@ -756,6 +724,7 @@ def train(attn_implementation=None):
     else:
         trainer.train()
     trainer.save_state()
+
 
 if __name__ == "__main__":
     train()

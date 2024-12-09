@@ -606,32 +606,16 @@ def train(attn_implementation=None):
     compute_dtype = (torch.float16 if training_args.fp16 else (torch.bfloat16 if training_args.bf16 else torch.float32))
 
     # skip projectors for quantization
-    projector_lst = []
+    projector_names = []
     for input_type in sign_data_args['visual_features']:
-        if eval(f"sign_data_args['visual_features']['{input_type}']['enable_input']"):
-            projector_lst.append(f"{input_type}_projector")
-    skip_modules = projector_lst + ['lm_head']
+        if sign_data_args['visual_features'][input_type]['enable_input']:
+            projector_names.append(f"{input_type}_projector")
+    skip_modules = projector_names + ['lm_head']
 
-    bnb_model_from_pretrained_args = {}
-    if training_args.bits in [4, 8]:
-        from transformers import BitsAndBytesConfig
-        bnb_model_from_pretrained_args.update(dict(
-            #device_map="auto",
-            device_map={"": training_args.device},
-            load_in_4bit=training_args.bits == 4,
-            load_in_8bit=training_args.bits == 8,
-            quantization_config=BitsAndBytesConfig(
-                load_in_4bit=training_args.bits == 4,
-                load_in_8bit=training_args.bits == 8,
-                llm_int4_skip_modules=skip_modules,
-                llm_int8_skip_modules=skip_modules,
-                llm_int8_threshold=6.0,
-                llm_int8_has_fp16_weight=False, # must be false if --bf True
-                bnb_4bit_compute_dtype=compute_dtype,
-                bnb_4bit_use_double_quant=training_args.double_quant,
-                bnb_4bit_quant_type=training_args.quant_type # {'fp4', 'nf4'}
-            )
-        ))
+    # prepare additional args
+    bnb_model_from_pretrained_args = prepare_bnb_args(training_args, compute_dtype, skip_modules)
+
+    # build model
     model = SignLlavaLlamaForCausalLM.from_pretrained(
                 model_args.model_name_or_path,
                 cache_dir=training_args.cache_dir,

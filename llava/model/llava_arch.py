@@ -43,9 +43,9 @@ class SignLlavaProjector: # adapted from LlavaMetaModel
             else:
                 exec(f"self.{projector_name}=None")
 
-    def initialize_projectors(self): # adapted from initialize_vision_modules, it seems it is never called! 
+    def initialize_projectors(self): # adapted from initialize_vision_modules, it seems it is never called!
         projector_configs = self.sign_model_args['projectors']
-        '''
+
         projector_names = []
         for input_type in INPUT_TYPES:
             projector_name = "{}_projector".format(input_type)
@@ -55,7 +55,7 @@ class SignLlavaProjector: # adapted from LlavaMetaModel
                 # In case it is frozen by LoRA
                 for p in eval(f"self.{projector_name}.parameters()"):
                     p.requires_grad = True
-        '''
+
         projector_names = []
         for input_type in INPUT_TYPES:
             projector_name = "{}_projector".format(input_type)
@@ -192,7 +192,7 @@ class SignLlavaForCausalLM(ABC): # adapted from LlavaMetaForCausalLM(ABC)
         new_labels_padded = torch.full((batch_size, max_len), IGNORE_INDEX, dtype=new_labels[0].dtype, device=new_labels[0].device)
         attention_mask = torch.zeros((batch_size, max_len), dtype=attention_mask.dtype, device=attention_mask.device)
         position_ids = torch.zeros((batch_size, max_len), dtype=position_ids.dtype, device=position_ids.device)
-        
+
         # padding to max length in the batch
         for i, (cur_new_embed, cur_new_labels) in enumerate(zip(new_input_embeds, new_labels)):
             cur_len = cur_new_embed.shape[0]
@@ -271,7 +271,7 @@ class SignLlavaForCausalLM(ABC): # adapted from LlavaMetaForCausalLM(ABC)
                     p.requires_grad = True
             for p in self.get_output_embeddings().parameters():
                 p.requires_grad = False
-        
+
         '''
         if num_new_tokens > 0:
             self.get_input_embeddings().weight[-num_new_tokens:].requires_grad = True

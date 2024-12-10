@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Any
+import torch
 
 import transformers
 
@@ -59,7 +60,7 @@ class TrainingArguments(transformers.TrainingArguments):
     group_by_modality_length: bool = field(default=False)
 
 
-def prepare_bnb_args(training_args, compute_dtype, skip_modules):
+def prepare_bnb_args(training_args: Any, compute_dtype: torch.dtype, skip_modules: dict):
     bnb_model_from_pretrained_args = {}
 
     if training_args.bits in [4, 8]:
@@ -67,8 +68,8 @@ def prepare_bnb_args(training_args, compute_dtype, skip_modules):
         bnb_model_from_pretrained_args.update(dict(
             # device_map="auto",
             device_map={"": training_args.device},
-            load_in_4bit=training_args.bits == 4,
-            load_in_8bit=training_args.bits == 8,
+            # load_in_4bit=training_args.bits == 4,
+            # load_in_8bit=training_args.bits == 8,
             quantization_config=BitsAndBytesConfig(
                 load_in_4bit=training_args.bits == 4,
                 load_in_8bit=training_args.bits == 8,

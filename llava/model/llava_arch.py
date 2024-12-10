@@ -235,7 +235,6 @@ class SignLlavaForCausalLM(ABC): # adapted from LlavaMetaForCausalLM(ABC)
         num_new_tokens = tokenizer.add_tokens([DEFAULT_VIDEO_START_TOKEN, DEFAULT_VIDEO_END_TOKEN], special_tokens=True)
         self.resize_token_embeddings(len(tokenizer))
 
-        '''
         if num_new_tokens > 0:
             input_embeddings = self.get_input_embeddings().weight.data
             output_embeddings = self.get_output_embeddings().weight.data
@@ -247,7 +246,6 @@ class SignLlavaForCausalLM(ABC): # adapted from LlavaMetaForCausalLM(ABC)
 
             input_embeddings[-num_new_tokens:] = input_embeddings_avg
             output_embeddings[-num_new_tokens:] = output_embeddings_avg
-        '''
 
         pretrained_ckpt = sign_model_args['projectors'].get("pretrained_projector_ckpt", None)
         if pretrained_ckpt:

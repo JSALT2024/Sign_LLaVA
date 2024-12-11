@@ -150,7 +150,18 @@ class SignContextDataset(Dataset):
                 if clip_name != "clip_order":
                     self.list_data.append((video_id, self.clip_order_to_int[video_id][clip_name]))
 
-        # TODO: remove missing
+        # remove missing clips
+        file_names = os.listdir(self.sign_data_args['clip_dir'])
+        file_names = list(set([".".join(name.split(".")[:-1]) for name in file_names]))
+
+        _list_data = []
+        for video_id, clip_id in self.list_data:
+            clip_name = self.clip_order_from_int[video_id][clip_id]
+            if clip_name in file_names:
+                _list_data.append((video_id, clip_id))
+        print(f"[SignContextDataset]: clips in annotations: {len(self.list_data)}, "
+              f"clips after remove: {len(_list_data)}")
+        self.list_data = _list_data
 
     def __len__(self):
         return len(self.list_data)

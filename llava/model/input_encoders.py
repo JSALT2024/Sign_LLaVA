@@ -10,6 +10,7 @@ from abc import ABC, abstractmethod
 from llava.encoders import mae_models_vit
 from .multimodal_projector.builder import build_vision_projector
 
+
 class Encoder(ABC):
     @property
     @abstractmethod
@@ -41,7 +42,7 @@ class MAEEncoder(Encoder, nn.Module):
     def __init__(self, arch: str, output_dim: int, projector: str, **kwargs):
         super().__init__()
         self._mae_model = mae_models_vit.__dict__[arch](global_pool=False)
-        self._projection_layer = build_vision_projector(projector, self._mae_model.embed_dim, output_dim)  # nn.Linear(self._mae_model.embed_dim, output_dim)
+        self._projection_layer = build_vision_projector(projector, self._mae_model.embed_dim, output_dim)
 
         self._mae_model = nn.Sequential(
             self._mae_model,

@@ -15,28 +15,40 @@
 
 from typing import List, Optional, Tuple, Union
 
-import torch
 import torch.nn as nn
-
 from transformers import AutoConfig, AutoModelForCausalLM, \
-                         LlamaConfig, LlamaModel, LlamaForCausalLM
-
-from transformers.modeling_outputs import CausalLMOutputWithPast
+    LlamaConfig, LlamaModel, LlamaForCausalLM
 from transformers.generation.utils import GenerateOutput
+from transformers.modeling_outputs import CausalLMOutputWithPast
 
+from llava.model.input_encoders import MAEEncoder
 from ..llava_arch import *
 
+ENCODERS = {
+    "mae": MAEEncoder
+}
 
 class LlavaConfig(LlamaConfig):
     model_type = "llava_llama"
 
-class SignLlavaLlamaModel(LlamaModel, SignLlavaProjector): # adpated from LlavaLlamaModel
+
+class SignLlavaLlamaModel(LlamaModel):
     config_class = LlavaConfig
 
-    def __init__(self, sign_model_args, sign_data_args, config: LlamaConfig):
+    def __init__(self, sign_model_args: dict, config: LlamaConfig) -> None:
         LlamaModel.__init__(self, config)
-        SignLlavaProjector.__init__(self, sign_model_args, sign_data_args, config)
-        
+
+        self.encoders = {}
+        # build encoders
+        for encoder_name in ENCODERS:
+            if encoder_name not in sign_model_args:
+                continue
+            encoder_kwargs = sign_model_args[encoder_name]
+            encoder_model = ENCODERS[encoder_name]
+            self.encoders[encoder_name] = encoder_model(**encoder_kwargs, output_dim=config.hidden_size)
+        self.encoders = torch.nn.ModuleDict(self.encoders)
+
+
 class SignLlavaLlamaForCausalLM(LlamaForCausalLM, SignLlavaForCausalLM):
     # adapted from LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM)
     config_class = LlavaConfig
@@ -44,7 +56,7 @@ class SignLlavaLlamaForCausalLM(LlamaForCausalLM, SignLlavaForCausalLM):
     def __init__(self, config, sign_model_args, sign_data_args):
         super(LlamaForCausalLM, self).__init__(config)
         self.config = config
-        self.model = SignLlavaLlamaModel(sign_model_args, sign_data_args, self.config)
+        self.model = SignLlavaLlamaModel(sign_model_args, self.config)
         self.pretraining_tp = config.pretraining_tp
         self.vocab_size = config.vocab_size
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
@@ -52,6 +64,10 @@ class SignLlavaLlamaForCausalLM(LlamaForCausalLM, SignLlavaForCausalLM):
         self.post_init()
         self.counter = 0
         self.gen_counter = 0
+
+    @property
+    def get_encoders(self):
+        return self.model.encoders
 
     def get_model(self):
         return self.model
@@ -152,7 +168,7 @@ class SignLlavaLlamaForCausalLM(LlamaForCausalLM, SignLlavaForCausalLM):
             inputs_embeds=inputs_embeds,
             **kwargs
         )
-    
+
     def prepare_inputs_for_generation(self, input_ids, past_key_values=None,
                                       inputs_embeds=None, **kwargs):
         visual_features = kwargs.pop("visual_features", None)

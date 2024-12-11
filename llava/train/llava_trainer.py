@@ -30,6 +30,7 @@ def maybe_zero_3(param, ignore_status=False, name=None):
         param = param.detach().cpu().clone()
     return param
 
+
 # Borrowed from peft.utils.get_peft_model_state_dict
 def get_peft_state_maybe_zero_3(named_params, bias):
     if bias == "none":
@@ -54,6 +55,7 @@ def get_peft_state_maybe_zero_3(named_params, bias):
         raise NotImplementedError
     to_return = {k: maybe_zero_3(v, ignore_status=True) for k, v in to_return.items()}
     return to_return
+
 
 def get_peft_state_non_lora_maybe_zero_3(named_params, require_grad_only=True):
     to_return = {k: t for k, t in named_params if "lora_" not in k}
@@ -101,10 +103,11 @@ def get_modality_length_grouped_indices(lengths, batch_size, world_size, generat
     lang_indices, lang_lengths = zip(*[(i, -l) for i, l in enumerate(lengths) if l < 0])
 
     mm_shuffle = [mm_indices[i] for i in get_length_grouped_indices(mm_lengths, batch_size, world_size, generator=None)]
-    lang_shuffle = [lang_indices[i] for i in get_length_grouped_indices(lang_lengths, batch_size, world_size, generator=None)]
+    lang_shuffle = [lang_indices[i] for i in
+                    get_length_grouped_indices(lang_lengths, batch_size, world_size, generator=None)]
     megabatch_size = world_size * batch_size
-    mm_megabatches = [mm_shuffle[i : i + megabatch_size] for i in range(0, len(mm_shuffle), megabatch_size)]
-    lang_megabatches = [lang_shuffle[i : i + megabatch_size] for i in range(0, len(lang_shuffle), megabatch_size)]
+    mm_megabatches = [mm_shuffle[i: i + megabatch_size] for i in range(0, len(mm_shuffle), megabatch_size)]
+    lang_megabatches = [lang_shuffle[i: i + megabatch_size] for i in range(0, len(lang_shuffle), megabatch_size)]
 
     last_mm = mm_megabatches[-1]
     last_lang = lang_megabatches[-1]
@@ -123,7 +126,7 @@ def get_length_grouped_indices(lengths, batch_size, world_size, generator=None, 
     # We need to use torch for the random part as a distributed sampler will set the random seed for torch.
     indices = torch.randperm(len(lengths), generator=generator)
     megabatch_size = world_size * batch_size
-    megabatches = [indices[i : i + megabatch_size].tolist() for i in range(0, len(lengths), megabatch_size)]
+    megabatches = [indices[i: i + megabatch_size].tolist() for i in range(0, len(lengths), megabatch_size)]
     megabatches = [sorted(megabatch, key=lambda i: lengths[i], reverse=True) for megabatch in megabatches]
     megabatches = [split_to_even_chunks(megabatch, lengths, world_size) for megabatch in megabatches]
 
@@ -158,10 +161,13 @@ class LengthGroupedSampler(Sampler):
 
     def __iter__(self):
         if self.group_by_modality:
-            indices = get_modality_length_grouped_indices(self.lengths, self.batch_size, self.world_size, generator=self.generator)
+            indices = get_modality_length_grouped_indices(self.lengths, self.batch_size, self.world_size,
+                                                          generator=self.generator)
         else:
-            indices = get_length_grouped_indices(self.lengths, self.batch_size, self.world_size, generator=self.generator)
+            indices = get_length_grouped_indices(self.lengths, self.batch_size, self.world_size,
+                                                 generator=self.generator)
         return iter(indices)
+
 
 # Borrowed from peft.utils.get_peft_model_state_dict
 def get_peft_state_maybe_zero_3(named_params, bias):
@@ -188,12 +194,14 @@ def get_peft_state_maybe_zero_3(named_params, bias):
     to_return = {k: maybe_zero_3(v, ignore_status=True) for k, v in to_return.items()}
     return to_return
 
+
 def get_peft_state_non_lora_maybe_zero_3(named_params, require_grad_only=True):
     to_return = {k: t for k, t in named_params if "lora_" not in k}
     if require_grad_only:
         to_return = {k: t for k, t in to_return.items() if t.requires_grad}
     to_return = {k: maybe_zero_3(v, ignore_status=True).cpu() for k, v in to_return.items()}
     return to_return
+
 
 class LLaVATrainer(Trainer):
 
@@ -212,6 +220,21 @@ class LLaVATrainer(Trainer):
         else:
             return super()._get_train_sampler()
 
+    @staticmethod
+    def _split_with_wd(model: nn.Module, exclude_names: list = [], decay_names: list = []) -> dict:
+        """
+        Split model parameters into two groups: those that will have weight decay applied and those that won't.
+        """
+        parameters = {True: [], False: []}
+        for name, param in model.named_parameters():
+            if name in exclude_names:
+                continue
+            if not param.requires_grad:
+                continue
+            to_decay = name in decay_names
+            parameters[to_decay].append(param)
+        return parameters
+
     def create_optimizer(self):
         """
         Setup the optimizer.
@@ -222,56 +245,54 @@ class LLaVATrainer(Trainer):
         if is_sagemaker_mp_enabled():
             return super().create_optimizer()
 
-        opt_model = self.model
+        weight_decay_setting = {True: self.args.weight_decay, False: 0.0}
 
         if self.optimizer is None:
+            optimizer_grouped_parameters = []
+            opt_model = self.model
+            encoder_models = self.model.get_encoders
+
+            # create param groups for encoders
+            encoder_parameter_names = []
+            for encoder_name, encoder in encoder_models.items():
+                decay_parameters = get_parameter_names(encoder, ALL_LAYERNORM_LAYERS)
+                decay_parameters = [name for name in decay_parameters if "bias" not in name]
+                parameters_encoder = self._split_with_wd(encoder, [], decay_parameters)
+                for to_decay in parameters_encoder:
+                    if not parameters_encoder[to_decay]:
+                        continue
+                    param_group = {
+                        "params": parameters_encoder[to_decay],
+                        "weight_decay": weight_decay_setting[to_decay],
+                        "lr": self.args.encoder_params[encoder_name].get("lr", self.args.learning_rate)
+                    }
+                    optimizer_grouped_parameters.append(param_group)
+
+                # save encoder names
+                all_full_names = [n for n, _ in opt_model.named_parameters()]
+                for name, param in encoder_models[encoder_name].named_parameters():
+                    if not param.requires_grad:
+                        continue
+                    _name = ""
+                    for full_name in all_full_names:
+                        if name in full_name:
+                            _name = full_name
+                            break
+                    if _name:
+                        encoder_parameter_names.append(_name)
+
+            # create param groups for rest of the modules
             decay_parameters = get_parameter_names(opt_model, ALL_LAYERNORM_LAYERS)
             decay_parameters = [name for name in decay_parameters if "bias" not in name]
-            if self.args.mm_projector_lr is not None:
-                projector_parameters = [name for name, _ in opt_model.named_parameters() if "projector" in name]
-                optimizer_grouped_parameters = [
-                    {
-                        "params": [
-                            p for n, p in opt_model.named_parameters() if (n in decay_parameters and n not in projector_parameters and p.requires_grad)
-                        ],
-                        "weight_decay": self.args.weight_decay,
-                    },
-                    {
-                        "params": [
-                            p for n, p in opt_model.named_parameters() if (n not in decay_parameters and n not in projector_parameters and p.requires_grad)
-                        ],
-                        "weight_decay": 0.0,
-                    },
-                    {
-                        "params": [
-                            p for n, p in opt_model.named_parameters() if (n in decay_parameters and n in projector_parameters and p.requires_grad)
-                        ],
-                        "weight_decay": self.args.weight_decay,
-                        "lr": self.args.mm_projector_lr,
-                    },
-                    {
-                        "params": [
-                            p for n, p in opt_model.named_parameters() if (n not in decay_parameters and n in projector_parameters and p.requires_grad)
-                        ],
-                        "weight_decay": 0.0,
-                        "lr": self.args.mm_projector_lr,
-                    },
-                ]
-            else:
-                optimizer_grouped_parameters = [
-                    {
-                        "params": [
-                            p for n, p in opt_model.named_parameters() if (n in decay_parameters and p.requires_grad)
-                        ],
-                        "weight_decay": self.args.weight_decay,
-                    },
-                    {
-                        "params": [
-                            p for n, p in opt_model.named_parameters() if (n not in decay_parameters and p.requires_grad)
-                        ],
-                        "weight_decay": 0.0,
-                    },
-                ]
+            parameters_model = self._split_with_wd(opt_model, encoder_parameter_names, decay_parameters)
+            for to_decay in parameters_model:
+                if not parameters_model[to_decay]:
+                    continue
+                param_group = {
+                    "params": parameters_model[to_decay],
+                    "weight_decay": weight_decay_setting[to_decay]
+                }
+                optimizer_grouped_parameters.append(param_group)
 
             optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(self.args)
 
@@ -285,10 +306,10 @@ class LLaVATrainer(Trainer):
                 for module in opt_model.modules():
                     if isinstance(module, nn.Embedding):
                         skipped += sum({p.data_ptr(): p.numel() for p in module.parameters()}.values())
-                        logger.info(f"skipped {module}: {skipped/2**20}M params")
+                        logger.info(f"skipped {module}: {skipped / 2 ** 20}M params")
                         manager.register_module_override(module, "weight", {"optim_bits": 32})
                         logger.debug(f"bitsandbytes: will optimize {module} in fp32")
-                logger.info(f"skipped: {skipped/2**20}M params")
+                logger.info(f"skipped: {skipped / 2 ** 20}M params")
 
         return self.optimizer
 
@@ -305,7 +326,7 @@ class LLaVATrainer(Trainer):
 
             run_dir = self._get_output_dir(trial=trial)
             output_dir = os.path.join(run_dir, checkpoint_folder)
-            #self.save_model(output_dir, _internal_call=True)
+            # self.save_model(output_dir, _internal_call=True)
             # Save optimizer and scheduler
             self._save_optimizer_and_scheduler(output_dir)
             # Save RNG state
@@ -333,7 +354,7 @@ class LLaVATrainer(Trainer):
                     self.state.best_metric = metric_value
                     self.state.best_model_checkpoint = output_dir
             # Update the `TrainerControl` state to where we are currently
-            #self.state.stateful_callbacks["TrainerControl"] = self.control.state()
+            # self.state.stateful_callbacks["TrainerControl"] = self.control.state()
             self.state.save_to_json(os.path.join(output_dir, TRAINER_STATE_NAME))
 
             # Solely rely on numerical checkpoint id for rotation.
@@ -341,7 +362,7 @@ class LLaVATrainer(Trainer):
             self._rotate_checkpoints(use_mtime=False, output_dir=run_dir)
         else:
             super(LLaVATrainer, self)._save_checkpoint(model, trial, metrics)
-        
+
         if self.args.lora_enable:
             state_dict = get_peft_state_maybe_zero_3(
                 model.named_parameters(), self.args.lora_bias
@@ -352,7 +373,7 @@ class LLaVATrainer(Trainer):
             if self.args.local_rank == 0 or self.args.local_rank == -1:
                 model.save_pretrained(output_dir, state_dict=state_dict)
                 torch.save(non_lora_state_dict, os.path.join(output_dir, 'non_lora_trainables.bin'))
-    
+
     def _save(self, output_dir: Optional[str] = None, state_dict=None):
         if getattr(self.args, 'tune_mm_mlp_adapter', False):
             pass

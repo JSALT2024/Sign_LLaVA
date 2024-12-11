@@ -60,7 +60,7 @@ class TrainingArguments(transformers.TrainingArguments):
     group_by_modality_length: bool = field(default=False)
 
 
-def prepare_bnb_args(training_args: Any, compute_dtype: torch.dtype, skip_modules: dict):
+def prepare_bnb_args(training_args: Any, compute_dtype: torch.dtype, skip_modules: list):
     bnb_model_from_pretrained_args = {}
 
     if training_args.bits in [4, 8]:

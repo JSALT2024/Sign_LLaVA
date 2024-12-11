@@ -1,6 +1,6 @@
-import torch
-import torch.nn as nn
 import re
+
+import torch.nn as nn
 
 
 class IdentityMap(nn.Module):
@@ -25,6 +25,7 @@ class SimpleResBlock(nn.Module):
             nn.GELU(),
             nn.Linear(channels, channels)
         )
+
     def forward(self, x):
         x = self.pre_norm(x)
         return x + self.proj(x)

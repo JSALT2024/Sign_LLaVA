@@ -21,11 +21,12 @@ from transformers import AutoConfig, AutoModelForCausalLM, \
 from transformers.generation.utils import GenerateOutput
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
-from llava.model.input_encoders import MAEEncoder
+from llava.model.input_encoders import MAEEncoder, PoseEncoder
 from ..llava_arch import *
 
 ENCODERS = {
-    "mae": MAEEncoder
+    "mae": MAEEncoder,
+    "pose": PoseEncoder
 }
 
 class LlavaConfig(LlamaConfig):

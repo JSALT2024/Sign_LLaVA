@@ -253,11 +253,12 @@ def train(attn_implementation=None):
     compute_dtype = (torch.float16 if training_args.fp16 else (torch.bfloat16 if training_args.bf16 else torch.float32))
 
     # skip projectors for quantization
-    projector_names = []
-    for input_type in sign_data_args['visual_features']:
-        if sign_data_args['visual_features'][input_type]['enable_input']:
-            projector_names.append(f"{input_type}_projector")
-    skip_modules = projector_names + ['lm_head']
+    # projector_names = []
+    # for input_type in sign_model_args:
+    #     if 'enable_input' in sign_model_args[input_type] and sign_model_args[input_type]['enable_input']:
+    #         projector_names.append(f"{input_type}_projector")
+    # skip_modules = projector_names + ['lm_head']
+    skip_modules = ['lm_head']
 
     # prepare additional args
     bnb_model_from_pretrained_args = prepare_bnb_args(training_args, compute_dtype, skip_modules)

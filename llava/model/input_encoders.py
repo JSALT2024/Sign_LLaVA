@@ -1,5 +1,5 @@
 import os
-import cv2
+from PIL import Image
 import torch
 from torch import nn
 import numpy as np
@@ -77,8 +77,9 @@ class MAEEncoder(Encoder, nn.Module):
         print(f"[MAEEncoder]: Load checkpoint message: {msg}")
 
     def normalize_image(self, image_bgr: np.ndarray, image_size: tuple = (224, 224)):
-        image = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
-        image = cv2.resize(image, image_size)
+        image_rgb = image_bgr[..., ::-1]
+        image = Image.fromarray(np.uint8(image_rgb)).convert('RGB')
+        image = image.resize(image_size)
         image = self.transform(image)
         return image
 

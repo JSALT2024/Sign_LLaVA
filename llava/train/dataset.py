@@ -38,7 +38,7 @@ def load_video_decord(path: str, workers: int = 1):
     fps = video_reader.get_avg_fps()
     for frame in video_reader:
         frame = frame.asnumpy()
-        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        frame = frame[..., ::-1]
         video.append(frame)
     return video, fps
 

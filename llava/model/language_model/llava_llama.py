@@ -21,13 +21,15 @@ from transformers import AutoConfig, AutoModelForCausalLM, \
 from transformers.generation.utils import GenerateOutput
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
-from llava.model.input_encoders import MAEEncoder, PoseEncoder
+from llava.model.input_encoders import MAEEncoder, PoseEncoder, DINOEncoder
 from ..llava_arch import *
 
 ENCODERS = {
     "mae": MAEEncoder,
-    "pose": PoseEncoder
+    "pose": PoseEncoder,
+    "dino": DINOEncoder
 }
+
 
 class LlavaConfig(LlamaConfig):
     model_type = "llava_llama"
@@ -92,8 +94,8 @@ class SignLlavaLlamaForCausalLM(LlamaForCausalLM, SignLlavaForCausalLM):
         video_sep_ids: torch.LongTensor = None,
         return_dict: Optional[bool] = None,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
-        #self.counter += 1
-        #print("forward", self.counter)
+        # self.counter += 1
+        # print("forward", self.counter)
         if inputs_embeds is None:
             (
                 input_ids,

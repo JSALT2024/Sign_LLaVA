@@ -3,7 +3,8 @@ import os
 import random
 from typing import Dict
 
-import cv2
+# import cv2
+from decord import VideoReader, cpu
 import torch
 import transformers
 from torch.utils.data import Dataset
@@ -15,19 +16,30 @@ from llava.mm_utils import tokenizer_video_token
 local_rank = None
 
 
-def load_video_cv(path: str) -> (list, int):
-    """Returns list of frames in bgr"""
-    video = []
+# def load_video_cv(path: str) -> (list, int):
+#     """Returns list of frames in bgr"""
+#     video = []
+#
+#     cap = cv2.VideoCapture(path)
+#     fps = cap.get(cv2.CAP_PROP_FPS)
+#     ret = True
+#     while ret:
+#         ret, img = cap.read()
+#         if ret:
+#             # img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+#             video.append(img)
+#     cap.release()
+#     return video, fps
 
-    cap = cv2.VideoCapture(path)
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    ret = True
-    while ret:
-        ret, img = cap.read()
-        if ret:
-            # img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            video.append(img)
-    cap.release()
+
+def load_video_decord(path: str, workers: int = 1):
+    video = []
+    video_reader = VideoReader(path, num_threads=workers, ctx=cpu(0))
+    fps = video_reader.get_avg_fps()
+    for frame in video_reader:
+        frame = frame.asnumpy()
+        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        video.append(frame)
     return video, fps
 
 
@@ -196,7 +208,8 @@ class SignContextDataset(Dataset):
         clip_path = os.path.join(self.sign_data_args['clip_dir'], f"{clip_name}.mp4")
         json_path = os.path.join(self.sign_data_args['clip_dir'], f"{clip_name}.json")
 
-        clip_data, fps = load_video_cv(clip_path)
+        #clip_data, fps = load_video_cv(clip_path)
+        clip_data, fps = load_video_decord(clip_path)
         json_data = load_json(json_path)
 
         # TODO: normalize keypoints for pose encoder

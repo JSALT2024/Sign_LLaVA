@@ -56,7 +56,8 @@ class SignLlavaForCausalLM(ABC):  # adapted from LlavaMetaForCausalLM(ABC)
 
             for encoder_name, encoder in encoders.items():
                 device = next(encoder.parameters()).device
-                embedding = encoder(clip_data['clip'], clip_data['predictions'], device)
+                dtype = next(encoder.parameters()).dtype
+                embedding = encoder(clip_data['clip'], clip_data['predictions'], device, dtype)
                 projected_vf_dict[encoder_name] = embedding
             projected_visual_features.append(projected_vf_dict)
         del visual_features

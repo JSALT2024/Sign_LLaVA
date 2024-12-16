@@ -3,7 +3,7 @@ from PIL import Image
 import torch
 from torch import nn
 import numpy as np
-from typing import List, Union
+from typing import List, Union, Optional
 from torchvision import transforms
 from abc import ABC, abstractmethod
 
@@ -34,6 +34,7 @@ class Encoder(ABC):
         images: Union[List[np.array], np.array],
         input_predictions: dict,
         device: torch.device,
+        dtype: Optional[torch.dtype] = None
     ) -> torch.Tensor:
         ...
 
@@ -88,6 +89,7 @@ class MAEEncoder(Encoder, nn.Module):
         images: Union[List[np.array], np.array],
         input_predictions: dict,
         device: torch.device,
+        dtype: Optional[torch.dtype] = None
     ) -> torch.Tensor:
         if not isinstance(images, list):
             images = [images]
@@ -97,6 +99,8 @@ class MAEEncoder(Encoder, nn.Module):
         for batch in batches:
             images = [self.normalize_image(image, self.image_size) for image in batch]
             images = torch.stack(images).to(device)
+            if dtype is not None:
+                images = images.type(dtype)
 
             prediction = self.model(images)
             predictions.append(prediction)
@@ -158,6 +162,7 @@ class PoseEncoder(Encoder, nn.Module):
         images: Union[List[np.array], np.array],
         input_predictions: dict,
         device: torch.device,
+        dtype: Optional[torch.dtype] = None
     ) -> torch.Tensor:
         normalized_keypoints = self.normalize_keypoints(input_predictions)
         normalized_keypoints = torch.tensor(normalized_keypoints).float().to(device)
@@ -165,6 +170,8 @@ class PoseEncoder(Encoder, nn.Module):
         predictions = []
         batches = self.create_batches(normalized_keypoints, self.batch_size)
         for batch in batches:
+            if dtype is not None:
+                batch = batch.type(dtype)
             prediction = self.model(batch)
             predictions.append(prediction)
         predictions = torch.cat(predictions, 0)
@@ -255,6 +262,7 @@ class DINOEncoder(Encoder, nn.Module):
         images: Union[List[np.array], np.array],
         input_predictions: dict,
         device: torch.device,
+        dtype: Optional[torch.dtype] = None
     ) -> torch.Tensor:
         if not isinstance(images, list):
             images = [images]
@@ -283,6 +291,10 @@ class DINOEncoder(Encoder, nn.Module):
             images_face = self._normalize_batch_images(images_face, device)
             images_left = self._normalize_batch_images(images_left, device)
             images_right = self._normalize_batch_images(images_right, device)
+            if dtype is not None:
+                images_face = images_face.type(dtype)
+                images_left = images_left.type(dtype)
+                images_right = images_right.type(dtype)
 
             face_features = face_model(images_face)
             left_features = hand_model(images_left)

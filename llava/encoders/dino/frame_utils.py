@@ -1,6 +1,7 @@
 from typing import List, Tuple
 
-import cv2
+# import cv2
+from PIL import Image
 import numpy as np
 
 
@@ -28,7 +29,9 @@ def crop_frame(image, bounding_box):
 
 def resize_frame(frame, frame_size):
     if frame is not None and frame.size > 0:
-        return cv2.resize(frame, frame_size, interpolation=cv2.INTER_AREA)
+            frame = Image.fromarray(frame)
+            frame = frame.resize(frame_size, resample=Image.Resampling.LANCZOS)
+            return np.array(frame) #cv2.resize(frame, frame_size, interpolation=cv2.INTER_AREA)
     else:
         return None
 

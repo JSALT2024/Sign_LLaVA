@@ -241,7 +241,7 @@ class DINOEncoder(Encoder, nn.Module):
         msg = self.encoder_model.load_state_dict(face_checkpoint[model_key], strict=False)
         print(f"[DINO2Encoder]: Load face_checkpoint message: {msg}")
 
-        hand_checkpoint = torch.load(face_checkpoint_path, map_location='cpu')
+        hand_checkpoint = torch.load(hand_checkpoint_path, map_location='cpu')
         hand_checkpoint = self._rename_parameters(hand_checkpoint)
         msg = self.encoder_model.load_state_dict(hand_checkpoint[model_key], strict=False)
         print(f"[DINO2Encoder]: Load hand_checkpoint message: {msg}")

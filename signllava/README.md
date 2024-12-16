@@ -1,3 +1,51 @@
+# Config (encoder parameters)
+```yaml
+SignModelArguments:
+  mae:
+    # mandatory
+    arch: vit_base_patch16
+    projector: linear        # string for llava/model/multimodal_projector/builder.py -> build_vision_projector
+    freeze: False
+
+    # optional
+    checkpoint_path: /weights/mae/16-07_21-52-12/checkpoint-440.pth
+    batch_size: 2    # batch size for the encoder, default is 16
+    lr: 0.0001       # learning rate of the encoder, if not provided TrainingArguments.learning_rate will be used
+    image_size: 224  # encoder input size, int or tuple, default is (224, 224)
+
+  pose:
+    # mandatory
+    input_dim: 208           # number of keypoints for encoding (based on normalization method)
+    projector: mlp1x_gelu    # string for llava/model/multimodal_projector/builder.py -> build_vision_projector
+    freeze: False
+
+    # optional
+    batch_size: 256  # batch size for the encoder, default is 16
+    lr: 0.0001       # learning rate of the encoder, if not provided TrainingArguments.learning_rate will be used
+    normalization_methods:          # what and how to normalize keypoints (pose, right_hand, left_hand, face), (global, local)
+       - global-pose_landmarks
+       - local-right_hand_landmarks
+       - local-left_hand_landmarks
+       - local-face_landmarks
+
+  dino:
+    # mandatory
+    arch: dinov2_vits14_reg
+    projector: linear         # string for llava/model/multimodal_projector/builder.py -> build_vision_projector
+    freeze: False
+
+    # optional
+    checkpoint_path:    # path to face and hand checkpoints, order matters (first face, second hand)
+      - /weights/dino/face/teacher_checkpoint.pth
+      - /weights/dino/hand/teacher_checkpoint.pth
+    batch_size: 2    # batch size for the encoder, default is 16
+    lr: 0.0001       # learning rate of the encoder, if not provided TrainingArguments.learning_rate will be used
+    image_size: 224  # encoder input size, int or tuple, default is (224, 224)
+
+  projectors:  # TODO: fix/remove from code
+    pretrained_projector_ckpt: null  # used for embedding loading in llama_arch -> initialize_vision_tokenizer
+```
+
 # Data
 
 Multiple input files for each visual representation.
@@ -52,13 +100,13 @@ Multiple input files for each visual representation.
 # !IMPORTANT! CHECK THIS BEFORE RUNNING TRAINING!
 Find the location where the `transformers` package is installed in your `llava` environment. For example, for me, it is `/home/xzhan138/anaconda3/envs/llava/lib/python3.10/site-packages/transformers/`.
 
-**Please make two modifications for proper checkpoint saving and loading:** 
+**Please make two modifications for proper checkpoint saving and loading:**
 1. In `${transformers_path}/trainer.py`, around line *2490*, add `exclude_frozen_parameters=True`.
     ```
     self.model_wrapper.save_checkpoint(output_dir, exclude_frozen_parameters=True)
     ```
     ![trainer.py](images/save_ckpt.png)
-    This enables saving only the parameters that are updated during training instead of all the parameters for each checkpoint. 
+    This enables saving only the parameters that are updated during training instead of all the parameters for each checkpoint.
     During **pretraining**, we only need to save the `projector` weights, otherwise the checkpoint gets huge with the pretrained model.
 2. In `${transformers_path}/integrations/deepspeed.py`, line *403*, add `load_module_strict=False`.
     ```
@@ -67,7 +115,7 @@ Find the location where the `transformers` package is installed in your `llava` 
     )
     ```
     ![deepspeed.py](images/load_ckpt.png)
-    This enables loading a model `state_dict` that contains only part of the parameters of the model. 
+    This enables loading a model `state_dict` that contains only part of the parameters of the model.
     During **pretraining**, when resuming training from a checkpoint, this allows to load only the `projector` weights.
 3. In `${transformers_path}/trainer.py`, around line *2791*, in the `compute_loss` function, change `labels = inputs.pop("labels")` to `labels = inputs["labels"]` **and** add this line: `labels = torch.nn.functional.pad(labels,(outputs.logits.shape[1]-labels.shape[1], 0), 'constant', labels[0][0])` before `if model_name in MODEL_FOR_CAUSAL_LM_MAPPING_NAMES.values()`:
     ```
@@ -98,7 +146,7 @@ Find the location where the `transformers` package is installed in your `llava` 
     ```
     If label smoothing is turned on with `label_smoothing_factor=0.1`, the original code would throw an error.
 # Pretraining
-1. Configuration file: 
+1. Configuration file:
 ```
 signllava/configs/pretrain.yaml
 ```
@@ -115,7 +163,7 @@ lora_enable: False
 freeze_embed_tokens: True
 ```
 # Fine-tuning
-1. Configuration file: 
+1. Configuration file:
 ```
 signllava/configs/finetune.yaml
 ```
@@ -140,7 +188,7 @@ bash signllava/scripts/generate.sh
 1. Generate without context
 ```
 SignDataArguments:
-    prepared_predicted_context: False 
+    prepared_predicted_context: False
     on_the_fly_predicted_context: False
     context_window_size: 0
     prelude_window_size: 0
@@ -148,16 +196,16 @@ SignDataArguments:
 2. Generate with ground-truth context
 ```
 SignDataArguments:
-    prepared_predicted_context: False 
+    prepared_predicted_context: False
     on_the_fly_predicted_context: False
     context_window_size: 2 # a number greater than 0
-    prelude_window_size: 2 
+    prelude_window_size: 2
 ```
 3. Generate with predicted context
 ```
 SignDataArguments:
-    prepared_predicted_context: False 
+    prepared_predicted_context: False
     on_the_fly_predicted_context: True
     context_window_size: 2 # a number greater than 0
-    prelude_window_size: 2 
+    prelude_window_size: 2
 ```

@@ -237,13 +237,13 @@ class DINOEncoder(Encoder, nn.Module):
             raise ValueError(f"[DINO2Encoder]: no checkpoint at {hand_checkpoint_path}")
 
         face_checkpoint = torch.load(face_checkpoint_path, map_location='cpu')
-        face_checkpoint = self._rename_parameters(face_checkpoint)
-        msg = self.encoder_model.load_state_dict(face_checkpoint[model_key], strict=False)
+        face_checkpoint = self._rename_parameters(face_checkpoint[model_key])
+        msg = self.encoder_model["face_model"].load_state_dict(face_checkpoint, strict=True)
         print(f"[DINO2Encoder]: Load face_checkpoint message: {msg}")
 
         hand_checkpoint = torch.load(hand_checkpoint_path, map_location='cpu')
-        hand_checkpoint = self._rename_parameters(hand_checkpoint)
-        msg = self.encoder_model.load_state_dict(hand_checkpoint[model_key], strict=False)
+        hand_checkpoint = self._rename_parameters(hand_checkpoint[model_key])
+        msg = self.encoder_model["hand_model"].load_state_dict(hand_checkpoint, strict=True)
         print(f"[DINO2Encoder]: Load hand_checkpoint message: {msg}")
 
     def normalize_image(self, image_bgr: np.ndarray, image_size: tuple = (224, 224)):

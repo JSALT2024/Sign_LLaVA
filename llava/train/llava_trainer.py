@@ -317,15 +317,16 @@ class LLaVATrainer(Trainer):
         # In all cases, including ddp/dp/deepspeed, self.model is always a reference to the model we
         # want to save except FullyShardedDDP.
         # assert unwrap_model(model) is self.model, "internal model should be a reference to self.model"
-        if getattr(self.args, 'tune_mm_mlp_adapter', False):
-            from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
-            checkpoint_folder = f"{PREFIX_CHECKPOINT_DIR}-{self.state.global_step}"
 
+        from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
+        checkpoint_folder = f"{PREFIX_CHECKPOINT_DIR}-{self.state.global_step}"
+        run_dir = self._get_output_dir(trial=trial)
+        output_dir = os.path.join(run_dir, checkpoint_folder)
+
+        if getattr(self.args, 'tune_mm_mlp_adapter', False):
             if self.hp_search_backend is None and trial is None:
                 self.store_flos()
 
-            run_dir = self._get_output_dir(trial=trial)
-            output_dir = os.path.join(run_dir, checkpoint_folder)
             # self.save_model(output_dir, _internal_call=True)
             # Save optimizer and scheduler
             self._save_optimizer_and_scheduler(output_dir)

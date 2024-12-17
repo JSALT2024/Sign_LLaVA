@@ -258,7 +258,7 @@ def train(attn_implementation=None):
     #     if 'enable_input' in sign_model_args[input_type] and sign_model_args[input_type]['enable_input']:
     #         projector_names.append(f"{input_type}_projector")
     # skip_modules = projector_names + ['lm_head']
-    skip_modules = ['lm_head']
+    skip_modules = ['lm_head', "model.encoders"]
 
     # prepare additional args
     bnb_model_from_pretrained_args = prepare_bnb_args(training_args, compute_dtype, skip_modules)
@@ -331,7 +331,7 @@ def train(attn_implementation=None):
         model.requires_grad_(False)
 
     # load pretrained weights and freeze/unfreeze encoders
-    for encoder_name, encoder in model.model.encoders.items():
+    for encoder_name, encoder in model.get_model().encoders.items():
         if "checkpoint_path" in sign_model_args[encoder_name]:
             encoder.initialize_model(**sign_model_args[encoder_name])
         encoder.require_grad(not sign_model_args[encoder_name]["freeze"])

@@ -17,6 +17,8 @@ class ModelArguments:
 
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
+    per_device_train_batch_size: int = field(default=1)
+    per_device_eval_batch_size: int = field(default=1)
     cache_dir: Optional[str] = field(default=None)
     output_dir: Optional[str] = field(default=".")
     bf16: bool = field(default=True)

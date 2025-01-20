@@ -6,6 +6,7 @@ import numpy as np
 from typing import List, Union, Optional
 from torchvision import transforms
 from abc import ABC, abstractmethod
+import deepspeed
 
 from llava.encoders import mae_models_vit, get_keypoints, get_local_crops
 from .multimodal_projector.builder import build_vision_projector
@@ -37,6 +38,58 @@ class Encoder(ABC):
         dtype: Optional[torch.dtype] = None
     ) -> torch.Tensor:
         ...
+
+    def zero_3_load_state_dict(self, module_to_load, state_dict, start_prefix=""):
+        # TODO: test checkpoint loading (this function is absolute magic and I have no idea how it works)
+        # source: https://github.com/microsoft/DeepSpeed/issues/5326#issuecomment-2237852215
+
+        # copy state_dict so _load_from_state_dict can modify it
+        metadata = getattr(state_dict, "_metadata", None)
+        state_dict = state_dict.copy()
+        if metadata is not None:
+            state_dict._metadata = metadata
+
+        error_msgs = []
+
+        def load(module, state_dict, prefix=""):
+            local_metadata = {} if metadata is None else metadata.get(prefix[:-1], {})
+            args = (state_dict, prefix, local_metadata, True, [], [], error_msgs)
+            # Parameters of module and children will start with prefix. We can exit early if there are none in this
+            # state_dict
+            if len([key for key in state_dict if key.startswith(prefix)]) > 0:
+                    # In sharded models, each shard has only part of the full state_dict, so only gather
+                    # parameters that are in the current state_dict.
+                    named_parameters = dict(
+                        module.named_parameters(prefix=prefix[:-1], recurse=False)
+                    )
+                    params_to_gather = [
+                        named_parameters[k]
+                        for k in state_dict.keys()
+                        if k in named_parameters
+                    ]
+                    if len(params_to_gather) > 0:
+                        # because zero3 puts placeholders in model params, this context
+                        # manager gathers (unpartitions) the params of the current layer, then loads from
+                        # the state dict and then re-partitions them again
+                        with deepspeed.zero.GatheredParameters(
+                            params_to_gather, modifier_rank=0
+                        ):
+                            if deepspeed.comm.get_rank() == 0:
+                                module._load_from_state_dict(*args)
+            else:
+                module._load_from_state_dict(*args)
+
+            for name, child in module._modules.items():
+                if child is not None:
+                    load(child, state_dict, prefix + name + ".")
+
+        load(module_to_load, state_dict, start_prefix)
+        if error_msgs:
+            raise RuntimeError(
+                "Error(s) in loading state_dict for {}:\n\t{}".format(
+                    module_to_load.__class__.__name__, "\n\t".join(error_msgs)
+                )
+            )
 
 
 class MAEEncoder(Encoder, nn.Module):
@@ -72,10 +125,11 @@ class MAEEncoder(Encoder, nn.Module):
             raise ValueError(f"[MAEEncoder]: no checkpoint at {checkpoint_path}")
 
         checkpoint = torch.load(checkpoint_path, map_location='cpu')
-        msg = self.encoder_model.load_state_dict(checkpoint[model_key], strict=False)
+        # msg = self.encoder_model.load_state_dict(checkpoint[model_key], strict=False)
 
-        print(f"[MAEEncoder]: Missing head and unexpected decoder keys are expected.")
-        print(f"[MAEEncoder]: Load checkpoint message: {msg}")
+        # print(f"[MAEEncoder]: Missing head and unexpected decoder keys are expected.")
+        # print(f"[MAEEncoder]: Load checkpoint message: {msg}")
+        self.zero_3_load_state_dict(self.encoder_model, checkpoint[model_key], "")
 
     def normalize_image(self, image_bgr: np.ndarray, image_size: tuple = (224, 224)):
         image_rgb = image_bgr[..., ::-1]
@@ -144,9 +198,10 @@ class PoseEncoder(Encoder, nn.Module):
             raise ValueError(f"[PoseEncoder]: no checkpoint at {checkpoint_path}")
 
         checkpoint = torch.load(checkpoint_path, map_location='cpu')
-        msg = self.encoder_model.load_state_dict(checkpoint[model_key], strict=False)
-
-        print(f"[PoseEncoder]: Load checkpoint message: {msg}")
+        # msg = self.encoder_model.load_state_dict(checkpoint[model_key], strict=False)
+        # print(f"[PoseEncoder]: Load checkpoint message: {msg}")
+        self.zero_3_load_state_dict(self.encoder_model, checkpoint[model_key], "")
+        
 
     def normalize_keypoints(self, keypoints: dict):
         normalized_keypoints = get_keypoints(
@@ -228,6 +283,7 @@ class DINOEncoder(Encoder, nn.Module):
                 new_checkpoint[new_key] = value
         return new_checkpoint
 
+
     def initialize_model(self, checkpoint_path: Union[list, str], model_key: str = "teacher", **kwargs) -> None:
         face_checkpoint_path = checkpoint_path[0]
         hand_checkpoint_path = checkpoint_path[1]
@@ -238,13 +294,15 @@ class DINOEncoder(Encoder, nn.Module):
 
         face_checkpoint = torch.load(face_checkpoint_path, map_location='cpu')
         face_checkpoint = self._rename_parameters(face_checkpoint[model_key])
-        msg = self.encoder_model["face_model"].load_state_dict(face_checkpoint, strict=True)
-        print(f"[DINO2Encoder]: Load face_checkpoint message: {msg}")
+        # msg = self.encoder_model["face_model"].load_state_dict(face_checkpoint, strict=True)
+        #print(f"[DINO2Encoder]: Load face_checkpoint message: {msg}")
+        self.zero_3_load_state_dict(self.encoder_model["face_model"], face_checkpoint, "")
 
         hand_checkpoint = torch.load(hand_checkpoint_path, map_location='cpu')
         hand_checkpoint = self._rename_parameters(hand_checkpoint[model_key])
-        msg = self.encoder_model["hand_model"].load_state_dict(hand_checkpoint, strict=True)
-        print(f"[DINO2Encoder]: Load hand_checkpoint message: {msg}")
+        # msg = self.encoder_model["hand_model"].load_state_dict(hand_checkpoint, strict=True)
+        # print(f"[DINO2Encoder]: Load hand_checkpoint message: {msg}")
+        self.zero_3_load_state_dict(self.encoder_model["hand_model"], hand_checkpoint, "")
 
     def normalize_image(self, image_bgr: np.ndarray, image_size: tuple = (224, 224)):
         image_rgb = image_bgr[..., ::-1]

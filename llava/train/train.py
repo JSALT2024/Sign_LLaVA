@@ -246,6 +246,10 @@ def train(attn_implementation=None):
     training_args.run_name = output_dir.split('/')[-1]
     training_args.output_dir = output_dir
 
+    # TODO: test if it is necessary (https://github.com/huggingface/transformers/blob/main/docs/source/en/deepspeed.md#non-trainer-deepspeed-integration)
+    from transformers.deepspeed import HfDeepSpeedConfig
+    dschf = HfDeepSpeedConfig(training_args.deepspeed)
+
     # set seed
     set_same_seed(training_args.seed)
 
